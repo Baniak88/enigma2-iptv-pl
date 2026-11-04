@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
-from enigma import eServiceReference
+from enigma import eServiceReference, gFont
 from Plugins.Plugin import PluginDescriptor
 from Screens.Screen import Screen
 from Screens.MessageBox import MessageBox
-from Screens.ChoiceBox import ChoiceBox
 from Screens.InfoBar import MoviePlayer
 from Components.ActionMap import ActionMap
 from Components.Label import Label
@@ -23,15 +22,19 @@ settings.player = ConfigSelection(default='4097', choices=[('4097', 'GStreamer (
 
 
 class IPTVSettings(Screen, ConfigListScreen):
-    skin = '''<screen name="IPTVSettings" position="center,center" size="1100,450" title="IPTV PL — ustawienia">
-      <widget name="config" position="20,20" size="1060,310" />
-      <widget name="help" position="20,350" size="1060,80" font="Regular;23" />
+    skin = '''<screen name="IPTVSettings" position="center,center" size="1100,620" flags="wfNoBorder" backgroundColor="#00F2F2F7" title="Ustawienia">
+      <eLabel position="35,25" size="1030,55" text="Ustawienia" font="Regular;40" foregroundColor="#001C1C1E" backgroundColor="#00F2F2F7" />
+      <eLabel position="35,95" size="1030,40" text="TWOJA TELEWIZJA" font="Regular;21" foregroundColor="#00636366" backgroundColor="#00F2F2F7" />
+      <widget name="config" position="35,145" size="1030,185" itemHeight="65" font="Regular;26" foregroundColor="#001C1C1E" backgroundColor="#00FFFFFF" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00007AFF" scrollbarMode="showOnDemand" />
+      <eLabel position="35,360" size="1030,105" text="Wpisz adres listy M3U lub ścieżkę pliku.
+Domyślny odtwarzacz jest zalecany dla większości kanałów." font="Regular;24" foregroundColor="#00636366" backgroundColor="#00F2F2F7" />
+      <widget name="help" position="35,515" size="1030,75" font="Regular;23" foregroundColor="#00007AFF" backgroundColor="#00F2F2F7" />
     </screen>'''
 
     def __init__(self, session):
         Screen.__init__(self, session)
-        ConfigListScreen.__init__(self, [getConfigListEntry('Plik M3U lub URL', settings.source),
-                                      getConfigListEntry('Odtwarzacz', settings.player)], session=session)
+        ConfigListScreen.__init__(self, [getConfigListEntry('Lista kanałów', settings.source),
+                                      getConfigListEntry('Odtwarzanie', settings.player)], session=session)
         self['help'] = Label('OK: edycja / klawiatura ekranowa   Zielony: zapisz   Czerwony: anuluj')
         self['actions'] = ActionMap(['SetupActions', 'ColorActions'],
                                    {'save': self.save, 'green': self.save,
@@ -47,11 +50,36 @@ class IPTVSettings(Screen, ConfigListScreen):
         self.close(False)
 
 
+class IPTVGroups(Screen):
+    skin = '''<screen name="IPTVGroups" position="center,center" size="760,580" flags="wfNoBorder" backgroundColor="#00F2F2F7" title="Grupy">
+      <eLabel position="30,25" size="700,60" text="Grupy kanałów" font="Regular;38" foregroundColor="#001C1C1E" backgroundColor="#00F2F2F7" />
+      <widget name="groups" position="30,110" size="700,360" foregroundColor="#001C1C1E" backgroundColor="#00FFFFFF" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00007AFF" scrollbarMode="showOnDemand" />
+      <eLabel position="30,505" size="700,45" text="OK  Wybierz     EXIT  Wróć" font="Regular;24" foregroundColor="#00007AFF" backgroundColor="#00F2F2F7" />
+    </screen>'''
+
+    def __init__(self, session, choices):
+        Screen.__init__(self, session)
+        self['groups'] = MenuList(choices)
+        self['groups'].l.setFont(gFont('Regular', 27))
+        self['groups'].l.setItemHeight(60)
+        self['actions'] = ActionMap(['OkCancelActions'],
+                                   {'ok': self.choose, 'cancel': self.close}, -1)
+
+    def choose(self):
+        self.close(self['groups'].getCurrent())
+
+
 class IPTVBrowser(Screen):
-    skin = '''<screen name="IPTVBrowser" position="center,center" size="1100,620" title="IPTV PL">
-      <widget name="status" position="20,15" size="1060,45" font="Regular;25" />
-      <widget name="channels" position="20,70" size="1060,460" scrollbarMode="showOnDemand" />
-      <widget name="help" position="20,545" size="1060,60" font="Regular;22" />
+    skin = '''<screen name="IPTVBrowser" position="center,center" size="1100,620" flags="wfNoBorder" backgroundColor="#00F2F2F7" title="IPTV PL">
+      <eLabel position="35,25" size="700,55" text="Telewizja" font="Regular;42" foregroundColor="#001C1C1E" backgroundColor="#00F2F2F7" />
+      <eLabel position="840,35" size="225,40" text="IPTV PL" halign="right" font="Regular;24" foregroundColor="#00007AFF" backgroundColor="#00F2F2F7" />
+      <widget name="status" position="35,90" size="1030,40" font="Regular;23" foregroundColor="#00636366" backgroundColor="#00F2F2F7" />
+      <widget name="channels" position="35,145" size="650,360" foregroundColor="#001C1C1E" backgroundColor="#00FFFFFF" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00007AFF" scrollbarMode="showOnDemand" />
+      <eLabel position="715,145" size="350,360" backgroundColor="#00FFFFFF" />
+      <eLabel position="740,170" size="300,35" text="WYBRANY KANAŁ" font="Regular;19" foregroundColor="#00636366" backgroundColor="#00FFFFFF" />
+      <widget name="selection" position="740,225" size="300,140" font="Regular;29" foregroundColor="#001C1C1E" backgroundColor="#00FFFFFF" />
+      <widget name="detail" position="740,380" size="300,100" font="Regular;23" foregroundColor="#00007AFF" backgroundColor="#00FFFFFF" />
+      <widget name="help" position="35,535" size="1030,65" font="Regular;22" foregroundColor="#00636366" backgroundColor="#00F2F2F7" />
     </screen>'''
 
     def __init__(self, session):
@@ -62,6 +90,11 @@ class IPTVBrowser(Screen):
         self.disposed = False
         self['status'] = Label('')
         self['channels'] = MenuList([])
+        self['channels'].l.setFont(gFont('Regular', 27))
+        self['channels'].l.setItemHeight(60)
+        self['selection'] = Label('Twoje kanały')
+        self['detail'] = Label('Dodaj listę w ustawieniach')
+        self['channels'].onSelectionChanged.append(self.selection_changed)
         self['help'] = Label('OK: odtwórz   Zielony: odśwież   Żółty: grupy\nNiebieski/Menu: ustawienia   EXIT: wyjdź')
         self['actions'] = ActionMap(['OkCancelActions', 'ColorActions', 'MenuActions'],
                                    {'ok': self.play, 'cancel': self.close, 'red': self.close,
@@ -77,7 +110,8 @@ class IPTVBrowser(Screen):
         if self.loading:
             return
         self.loading = True
-        self['status'].setText('Wczytywanie listy…')
+        self['status'].setText('Odświeżanie kanałów…')
+        self['detail'].setText('Pobieranie listy…')
         deferToThread(load_playlist, settings.source.value).addCallbacks(self.loaded, self.failed)
 
     def loaded(self, channels):
@@ -93,17 +127,28 @@ class IPTVBrowser(Screen):
         if self.disposed:
             return
         self.render()
+        self['status'].setText('Nie udało się odświeżyć • Zielony: spróbuj ponownie')
         # Do not expose playlist URLs, which may contain passwords, in errors.
         self.session.open(MessageBox, 'Nie udało się wczytać listy. Sprawdź adres lub plik, połączenie i format M3U (maks. 8 MiB).', MessageBox.TYPE_ERROR)
 
     def render(self):
         visible = [c for c in self.channels if self.group is None or c['group'] == self.group]
         self['channels'].setList([(c['name'], c) for c in visible])
-        self['status'].setText('%s — %d kanałów' % (self.group or 'Wszystkie', len(visible)))
+        self['status'].setText('%s • %d kanałów' % (self.group or 'Wszystkie kanały', len(visible)))
+        self.selection_changed()
+
+    def selection_changed(self):
+        current = self['channels'].getCurrent()
+        if current:
+            self['selection'].setText(current[1]['name'])
+            self['detail'].setText('%s\nOK  Oglądaj teraz' % current[1]['group'])
+        else:
+            self['selection'].setText('Brak kanałów')
+            self['detail'].setText('Niebieski: dodaj listę' if not self.channels else 'Żółty: wybierz inną grupę')
 
     def groups(self):
         choices = [('Wszystkie', None)] + [(g, g) for g in sorted(set(c['group'] for c in self.channels))]
-        self.session.openWithCallback(self.selected_group, ChoiceBox, title='Wybierz grupę', list=choices)
+        self.session.openWithCallback(self.selected_group, IPTVGroups, choices)
 
     def selected_group(self, choice):
         if choice:
