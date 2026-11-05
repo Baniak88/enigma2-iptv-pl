@@ -10,7 +10,20 @@ Domyślny odtwarzacz: GStreamer, typ usługi 4097. Typy 5001/5002 wymagają
 osobno zainstalowanego ServiceApp oraz odpowiedniego odtwarzacza.
 Python 2 nie jest obsługiwany. Faktyczna obsługa kodeków i protokołów zależy od obrazu dekodera.
 
-## Instalacja
+## Instalacja bezpośrednio z GitHuba
+
+Repozytorium musi być publiczne, aby poniższe pobieranie działało bez logowania.
+W terminalu dekodera jako root:
+
+```sh
+wget -O /tmp/iptvpl-install.sh https://raw.githubusercontent.com/Baniak88/enigma2-iptv-pl/main/install.sh && sh /tmp/iptvpl-install.sh
+```
+
+Instalator sprawdza pobrane pliki i tworzy kopię poprzedniej wersji w /tmp.
+Po instalacji uruchom ponownie GUI z menu dekodera.
+Repozytorium prywatne wymaga uwierzytelnionego pobierania.
+
+## Instalacja z archiwum
 
 1. Zbuduj archiwum na komputerze: `python3 scripts/build.py`.
 2. Prześlij plik `dist/enigma2-plugin-extensions-iptvpl-1.0.0.tar.gz` do `/tmp` dekodera.
