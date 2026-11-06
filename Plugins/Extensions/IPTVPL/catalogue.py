@@ -145,6 +145,14 @@ class ChannelPage:
         page = self.catalogue.read_page(self.where, self.params, start)
         return page[index - start]
 
+    def position_of(self, channel):
+        key = hashlib.sha256(channel['url'].encode('utf-8')).hexdigest()
+        with self.catalogue.connect() as connection:
+            found = connection.execute('SELECT id FROM channels WHERE '+self.where+' AND favourite=? ORDER BY id LIMIT 1',self.params+(key,)).fetchone()
+            if found is None:
+                return None
+            return connection.execute('SELECT COUNT(*) FROM channels WHERE '+self.where+' AND id<?',self.params+(found[0],)).fetchone()[0]
+
     def __iter__(self):
         for index in range(self.count):
             yield self[index]
@@ -214,3 +222,4 @@ class ChannelCatalogue:
 
     def __del__(self):
         self.close()
+

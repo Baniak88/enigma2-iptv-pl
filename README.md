@@ -66,6 +66,7 @@ są rysowane jednocześnie, niezależnie od wielkości listy.
 - **Start**: półki telewizji, filmów i seriali.
 - **Telewizja / Filmy / Seriale**: pozycje pogrupowane według metadanych M3U.
 - **Moja lista**: ulubione dodawane i usuwane żółtym przyciskiem.
+- **Bukiety**: pełny widok grup playlisty i kanałów z przewijaniem stronami.
 - **Szukaj**: klawiatura ekranowa; wyszukiwanie nazw i grup w całej wczytanej liście.
 - **Playlisty**: przesyłanie z telefonu, import pliku z dekodera/USB, adres URL i wybór zapisanych plików.
 - **MENU / niebieski**: zmiana źródła, odtwarzacza i trybu wolnego internetu.
@@ -213,6 +214,36 @@ Przy braku miejsca podłącz nośnik albo zwolnij pamięć — limit 512 MiB nie
 że każda lista zmieści się na każdym odbiorniku.
 
 
+## Nawigacja podczas oglądania i bukiety
+
+Odtwarzacz IPTV rozszerza systemowy MoviePlayer, zachowując jego obsługę dźwięku,
+napisów i przywracania poprzedniej usługi po zamknięciu.
+
+- **CH+ / CH−**: następny/poprzedni kanał w aktualnej liście lub bukiecie.
+  Szybkie naciśnięcia są łączone; uruchamiany jest ostatni wskazany kanał.
+- **OK / góra / dół**: otwarcie listy kanałów przy działającym odtwarzaniu.
+- **MENU / niebieski**: otwarcie bukietów.
+- **INFO**: panel z nazwą, bieżącym bukietem, numerem pozycji i przyciskami; znika po 5 sekundach.
+- **EXIT / czerwony**: zakończenie odtwarzania i powrót do aplikacji na ostatnio wybraną pozycję.
+- **AUDIO / SUBTITLE**: wybór ścieżek przez mechanizmy obrazu Enigma2.
+- Lewo/prawo przełącza pozycje telewizji; przy filmach/serialach pozostaje obsługa przewijania obrazu.
+
+Zakładka **Bukiety** w górnym menu otwiera dwie kolumny:
+wszystkie grupy z licznikami po lewej, pozycje danego bukietu po prawej.
+Ze **Start** są dostępne wszystkie grupy playlisty; w pozostałych kategoriach
+obowiązuje ich filtr i wyszukiwanie. Bukiety są grupami z metadanych M3U,
+nie są automatycznie zapisywane do systemowych bukietów tunera.
+
+W tym widoku **lewo/prawo** zmienia kolumnę, **góra/dół** wybiera pozycję,
+**CH+/−** przewija stronami po 12, **OK** na bukiecie przechodzi do kanałów,
+a **OK / zielony** na kanale uruchamia go. **EXIT** wraca bez zmiany kanału.
+Wskazany kanał i zakres strony są widoczne; przeglądanie nie uruchamia kanałów automatycznie.
+Przy katalogach SQLite nie jest tworzona pełna lista kanałów w RAM.
+
+Mapowania obejmują standardowe akcje Enigma2 i nazwy przycisków OpenATV.
+Różnice w mapie klawiszy konkretnego obrazu mogą wymagać dopasowania;
+pełna weryfikacja odtwarzania nadal wymaga odbiornika.
+
 ## Pilot
 
 - **Strzałki**: wybór zakładki, przycisku, pozycji lub grupy.
@@ -251,6 +282,7 @@ Nie deklarujemy przetestowania na fizycznym odbiorniku.
 
 Usuwanie: usuń katalog `/usr/lib/enigma2/python/Plugins/Extensions/IPTVPL`
 i uruchom ponownie GUI.
+
 
 
 

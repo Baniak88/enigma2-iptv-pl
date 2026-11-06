@@ -217,7 +217,7 @@ class IPTVKeyboard(Screen):
 def streaming_skin():
     # Fixed widget count keeps even very large playlists cheap to render.
     elements = ['''<screen name="IPTVHome" position="center,center" size="1280,720" flags="wfNoBorder" backgroundColor="#00101010" title="IPTV PL">
-      <eLabel position="44,22" size="180,42" text="/ IPTV PL" font="Regular;30" foregroundColor="#00E50914" backgroundColor="#00101010" />
+      <eLabel position="44,22" size="160,42" text="/ IPTV PL" font="Regular;30" foregroundColor="#00E50914" backgroundColor="#00101010" />
       <widget name="eyebrow" position="44,103" size="690,28" font="Regular;19" foregroundColor="#00D0D0D0" backgroundColor="#00101010" />
       <widget name="hero" position="44,141" size="760,85" font="Regular;41" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
       <widget name="summary" position="44,233" size="760,56" font="Regular;23" foregroundColor="#00BFBFBF" backgroundColor="#00101010" />
@@ -228,8 +228,9 @@ def streaming_skin():
       <widget name="action1" position="306,304" size="314,48" font="Regular;23" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00303030" />
       <widget name="status" position="650,309" size="575,40" font="Regular;19" foregroundColor="#00BFBFBF" backgroundColor="#00101010" />
       <widget name="help" position="44,681" size="1180,30" font="Regular;18" foregroundColor="#00BFBFBF" backgroundColor="#00101010" />''']
-    nav = [('Start', 238, 80), ('Telewizja', 326, 125), ('Filmy', 459, 80),
-           ('Seriale', 547, 95), ('Moja lista', 650, 125), ('Szukaj', 943, 105), ('Playlisty', 1060, 165)]
+    nav = [('Start', 218, 80), ('Telewizja', 306, 116), ('Filmy', 430, 75),
+           ('Seriale', 513, 90), ('Moja lista', 611, 122), ('Bukiety', 741, 112),
+           ('Szukaj', 861, 100), ('Playlisty', 995, 200)]
     for index, (title, x, width) in enumerate(nav):
         elements.append('<eLabel position="%d,28" size="%d,34" text="%s" font="Regular;23" halign="center" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />' % (x, width, title))
         elements.append('<widget name="nav%d" position="%d,67" size="%d,4" backgroundColor="#00E50914" />' % (index, x, width))
@@ -247,6 +248,378 @@ def streaming_skin():
 def channel_key(channel):
     import hashlib
     return hashlib.sha256(channel['url'].encode('utf-8')).hexdigest()
+
+
+def bouquet_rows(channels, category='start', query='', favourites=()):
+    category = 'all' if category == 'start' else category
+    if getattr(channels, 'is_disk_catalogue', False):
+        return channels.build_rows(category, query, favourites)
+    groups = {}
+    for channel in channels:
+        if category in ('live', 'movies', 'series') and channel_category(channel) != category:
+            continue
+        if category == 'favourites' and channel_key(channel) not in favourites:
+            continue
+        if query and query.casefold() not in (channel['name'] + '\n' + channel['group']).casefold():
+            continue
+        groups.setdefault(channel['group'], []).append(channel)
+    return list(groups.items())
+
+
+def find_channel_position(rows, channel):
+    candidates = [(i, items) for i, (name, items) in enumerate(rows) if name == channel['group']]
+    if not candidates:
+        candidates = [(i, items) for i, (_, items) in enumerate(rows)]
+    for row, items in candidates:
+        if hasattr(items, 'position_of'):
+            index = items.position_of(channel)
+            if index is not None:
+                return row, index
+        else:
+            for index, item in enumerate(items):
+                if item['url'] == channel['url']:
+                    return row, index
+    return None
+
+
+class PlaybackContext:
+    def __init__(self, rows, row=0, index=0, selected=None, loader=None):
+        self.rows = rows
+        self.row = row if 0 <= row < len(rows) else 0
+        self.index = index if rows and 0 <= index < len(rows[self.row][1]) else 0
+        self.loader = loader
+        self.full_bouquets = loader is None
+        if selected and (not self.current() or self.current()['url'] != selected['url']):
+            position = find_channel_position(rows, selected)
+            if position:
+                self.row, self.index = position
+
+    def current(self):
+        return self.rows[self.row][1][self.index] if self.rows else None
+
+    def move(self, delta):
+        if self.rows:
+            self.index = (self.index + delta) % len(self.rows[self.row][1])
+        return self.current()
+
+    def change_bouquet(self, delta):
+        if self.rows:
+            self.row = (self.row + delta) % len(self.rows)
+            self.index = 0
+        return self.current()
+
+    def replace_rows(self, rows):
+        selected = self.current()
+        self.rows = rows
+        self.row = self.index = 0
+        self.full_bouquets = True
+        position = find_channel_position(rows, selected) if selected else None
+        if position:
+            self.row, self.index = position
+
+    def load(self):
+        return self.loader() if self.loader else self.rows
+
+
+def navigator_skin():
+    elements = ['''<screen name="IPTVNavigator" position="center,center" size="1280,720" flags="wfNoBorder" backgroundColor="#00101010" title="Bukiety i kanały">
+      <eLabel position="44,24" size="1192,48" text="Bukiety i kanały" font="Regular;36" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
+      <widget name="status" position="44,82" size="1192,30" font="Regular;21" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
+      <eLabel position="44,121" size="370,26" text="BUKIETY" font="Regular;19" foregroundColor="#00AAAAAA" backgroundColor="#00101010" />
+      <widget name="group" position="444,121" size="792,26" font="Regular;19" foregroundColor="#00AAAAAA" backgroundColor="#00101010" />
+      <widget name="detail" position="44,608" size="1192,33" font="Regular;21" foregroundColor="#00CCCCCC" backgroundColor="#00101010" />
+      <eLabel position="44,660" size="1192,35" text="Lewo / prawo: kolumna   CH+/−: strona   OK / zielony: wybierz   Czerwony / EXIT: wróć" font="Regular;21" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />''']
+    for col, x, width in [(0,44,370),(1,444,792)]:
+        for row in range(12):
+            y = 158 + row * 36
+            elements.append('<widget name="item%d_%d" position="%d,%d" size="%d,30" font="Regular;22" foregroundColor="#00FFFFFF" backgroundColor="#00202020" />' % (col,row,x,y,width))
+            elements.append('<widget name="line%d_%d" position="%d,%d" size="%d,3" backgroundColor="#00E50914" />' % (col,row,x,y+31,width))
+    elements.append('</screen>')
+    return ''.join(elements)
+
+
+class IPTVNavigator(Screen):
+    skin = navigator_skin()
+
+    def __init__(self, session, context, focus='channels'):
+        self.skin = fit_skin(type(self).skin, fullscreen=True)
+        Screen.__init__(self, session)
+        self.context = context
+        self.focus = 0 if focus == 'bouquets' else 1
+        self.group_index = context.row
+        self.channel_index = context.index
+        self.disposed = False
+        self.busy = False
+        self['status'] = Label('')
+        self['group'] = Label('')
+        self['detail'] = Label('')
+        for col in range(2):
+            for row in range(12):
+                self['item%d_%d' % (col,row)] = Label('')
+                self['line%d_%d' % (col,row)] = Label('')
+        self['actions'] = ActionMap(['OkCancelActions', 'DirectionActions', 'ColorActions', 'ChannelSelectBaseActions', 'InfobarChannelSelection'],
+            {'ok': self.choose, 'green': self.play_selected, 'cancel': self.close, 'red': self.close,
+             'left': lambda: self.move('left'), 'right': lambda: self.move('right'),
+             'up': lambda: self.move('up'), 'down': lambda: self.move('down'),
+             'nextBouquet': lambda: self.page(1), 'prevBouquet': lambda: self.page(-1),
+             'zapDown': lambda: self.page(1), 'zapUp': lambda: self.page(-1),
+             'ChannelPlusPressed': lambda: self.page(1), 'ChannelMinusPressed': lambda: self.page(-1)}, -4)
+        self.onFirstExecBegin.append(self.start)
+        self.onClose.append(self.cleanup)
+        self.onLayoutFinish.append(self.render)
+
+    def cleanup(self):
+        self.disposed = True
+
+    def start(self):
+        if self.context.full_bouquets:
+            self.render()
+            return
+        self.busy = True
+        self['status'].setText('Wczytywanie wszystkich bukietów…')
+        deferToThread(self.context.load).addCallbacks(self.loaded, self.failed)
+
+    def loaded(self, rows):
+        if self.disposed:
+            return
+        self.context.replace_rows(rows)
+        self.group_index = self.context.row
+        self.channel_index = self.context.index
+        self.busy = False
+        self.render()
+
+    def failed(self, failure):
+        if self.disposed:
+            return
+        self.busy = False
+        self.render()
+        self['status'].setText('Nie udało się wczytać bukietów. Wróć i odśwież playlistę.')
+
+    def move(self, direction):
+        if self.busy or not self.context.rows:
+            return
+        if direction == 'left':
+            self.focus = 0
+        elif direction == 'right':
+            self.focus = 1
+        else:
+            self.step(-1 if direction == 'up' else 1)
+        self.render()
+
+    def step(self, delta):
+        if not self.context.rows:
+            return
+        if self.focus == 0:
+            previous = self.group_index
+            self.group_index = max(0,min(len(self.context.rows)-1,self.group_index+delta))
+            if previous != self.group_index:
+                self.channel_index = 0
+        else:
+            self.channel_index = max(0,min(len(self.context.rows[self.group_index][1])-1,self.channel_index+delta))
+
+    def page(self, delta):
+        if not self.busy:
+            self.step(delta*12)
+            self.render()
+
+    def choose(self):
+        if self.busy:
+            return
+        if self.focus == 0:
+            self.focus = 1
+            self.render()
+        else:
+            self.play_selected()
+
+    def play_selected(self):
+        if not self.busy and self.context.rows:
+            self.close((self.group_index,self.channel_index))
+
+    def render(self):
+        if self.disposed:
+            return
+        rows = self.context.rows
+        group_start = (self.group_index//12)*12
+        channel_start = (self.channel_index//12)*12
+        items = rows[self.group_index][1] if rows else []
+        self['group'].setText(rows[self.group_index][0][:65] if rows else 'KANAŁY')
+        if not self.busy:
+            self['status'].setText('Bukiety %d–%d / %d   •   Pozycje %d–%d / %d' % (
+                group_start+1 if rows else 0,min(group_start+12,len(rows)),len(rows),
+                channel_start+1 if items else 0,min(channel_start+12,len(items)),len(items)))
+        playing = self.context.current()
+        for slot in range(12):
+            gi, ci = group_start+slot, channel_start+slot
+            group_text = '%s (%d)' % (rows[gi][0][:22],len(rows[gi][1])) if gi<len(rows) else ''
+            channel = items[ci] if ci<len(items) else None
+            text = '%d. %s%s' % (ci+1,'> ' if playing and channel and playing['url']==channel['url'] else '',channel['name'][:65]) if channel else ''
+            self['item0_%d'%slot].setText(group_text)
+            self['item1_%d'%slot].setText(text)
+            for col, selected, valid in [(0,gi==self.group_index,gi<len(rows)),(1,ci==self.channel_index,channel is not None)]:
+                line=self['line%d_%d'%(col,slot)]
+                line.show() if valid and selected and self.focus==col else line.hide()
+        self['detail'].setText(items[self.channel_index]['name'][:100] if items else 'Brak pozycji w tej kategorii.')
+
+
+def player_panel_skin():
+    skin = '''<screen name="IPTVPlayerPanel" position="center,center" size="1280,230" flags="wfNoBorder" backgroundColor="#00101010" title="Odtwarzanie">
+      <widget name="name" position="30,18" size="1220,55" font="Regular;34" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
+      <widget name="group" position="30,82" size="1220,34" font="Regular;23" foregroundColor="#00CCCCCC" backgroundColor="#00101010" />
+      <eLabel position="30,135" size="1220,32" text="CH+/−: kanał   OK: lista kanałów   MENU / niebieski: bukiety   EXIT: wróć do aplikacji" font="Regular;23" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
+      <eLabel position="30,182" size="1220,30" text="Dźwięk i napisy: przyciski AUDIO / SUBTITLE pilota. Panel znika automatycznie." font="Regular;20" foregroundColor="#00AAAAAA" backgroundColor="#00101010" />
+    </screen>'''
+    import xml.etree.ElementTree as ET
+    from enigma import getDesktop
+    root = ET.fromstring(fit_skin(skin))
+    height = int(root.get('size').split(',')[1])
+    root.set('position','center,%d' % max(0,getDesktop(0).size().height()-height-20))
+    return ET.tostring(root,encoding='unicode')
+
+
+class IPTVPlayerPanel(Screen):
+    def __init__(self,session,player):
+        from enigma import eTimer
+        self.skin = player_panel_skin()
+        Screen.__init__(self,session)
+        self.player = player
+        self['name'] = Label('')
+        self['group'] = Label('')
+        self['actions'] = ActionMap(['OkCancelActions','DirectionActions','InfobarChannelSelection','ChannelSelectBaseActions','ColorActions','MenuActions','InfoActions','InfobarEPGActions','InfobarAudioSelectionActions','InfobarSubtitleSelectionActions'],
+            {'ok':lambda:self.close('channels'),'cancel':lambda:self.close('exit'), 'red':lambda:self.close('exit'),
+             'menu':lambda:self.close('bouquets'),'blue':lambda:self.close('bouquets'),
+             'left':lambda:self.direction(-1),'right':lambda:self.direction(1),
+             'zapUp':lambda:self.zap(-1),'zapDown':lambda:self.zap(1),
+             'ChannelPlusPressed':lambda:self.zap(1),'ChannelMinusPressed':lambda:self.zap(-1),
+             'nextBouquet':lambda:self.zap(1),'prevBouquet':lambda:self.zap(-1),
+             'up':lambda:self.close('channels'),'down':lambda:self.close('channels'),
+             'info':self.refresh,'InfoPressed':self.refresh,'IPressed':self.refresh,
+             'audioSelection':lambda:self.close('audio'),'subtitleSelection':lambda:self.close('subtitles')},-5)
+        self.timer = eTimer(); self.timer.callback.append(self.close)
+        self.onFirstExecBegin.append(self.refresh)
+        self.onClose.append(self.timer.stop)
+
+    def refresh(self):
+        context=self.player.playback
+        channel=context.current()
+        self['name'].setText(channel['name'][:100] if channel else 'Brak kanału')
+        self['group'].setText('%s   •   %d / %d' % (context.rows[context.row][0],context.index+1,len(context.rows[context.row][1])) if channel else '')
+        self.timer.start(5000,True)
+
+    def direction(self,delta):
+        self.player.direction(delta)
+        self.refresh()
+
+    def zap(self,delta):
+        self.player.zap(delta)
+        self.refresh()
+
+
+class IPTVPlayer(MoviePlayer):
+    skinName = ['MoviePlayer']
+
+    def __init__(self,session,service,context):
+        from enigma import eTimer
+        self.playback=context
+        self.panel_open=False
+        MoviePlayer.__init__(self,session,service)
+        self.fromMovieSelection=False
+        self['iptv_navigation'] = ActionMap(['OkCancelActions','DirectionActions','InfobarChannelSelection','ChannelSelectBaseActions','ColorActions','MenuActions','InfoActions','InfobarEPGActions'],
+            {'ok':self.channels,'up':self.channels,'down':self.channels,
+             'cancel':self.finish,'red':self.finish,'menu':self.bouquets,'blue':self.bouquets,'info':self.controls,
+             'left':lambda:self.direction(-1),'right':lambda:self.direction(1),
+             'zapUp':lambda:self.zap(-1),'zapDown':lambda:self.zap(1),
+             'ChannelPlusPressed':lambda:self.zap(1),'ChannelMinusPressed':lambda:self.zap(-1),
+             'nextBouquet':lambda:self.zap(1),'prevBouquet':lambda:self.zap(-1),
+             'switchChannelUp':self.channels,'switchChannelDown':self.channels,
+             'InfoPressed':self.controls,'IPressed':self.controls},-5)
+        self.zap_timer=eTimer(); self.zap_timer.callback.append(self.apply_zap)
+        self.panel_timer=eTimer(); self.panel_timer.callback.append(self.controls)
+        self.onFirstExecBegin.append(lambda:self.panel_timer.start(250,True))
+        self.onClose.append(self.zap_timer.stop)
+        self.onClose.append(self.panel_timer.stop)
+
+    def controls(self):
+        if not self.panel_open and getattr(self,'execing',False):
+            self.panel_open=True
+            self.hide()
+            self.session.openWithCallback(self.panel_closed,IPTVPlayerPanel,self)
+
+    def panel_closed(self,action=None):
+        self.panel_open=False
+        self.hide()
+        if action=='channels': self.channels()
+        elif action=='bouquets': self.bouquets()
+        elif action=='exit': self.finish()
+        elif action in ('audio','subtitles'):
+            callback=getattr(self,'audioSelection' if action=='audio' else 'subtitleSelection',None)
+            if callback: callback()
+
+    def channels(self):
+        self.open_navigator('channels')
+
+    def bouquets(self):
+        self.open_navigator('bouquets')
+
+    def open_navigator(self,focus):
+        if not self.panel_open:
+            self.panel_open=True
+            self.session.openWithCallback(self.channel_selected,IPTVNavigator,self.playback,focus=focus)
+
+    def channel_selected(self,selection=None):
+        self.panel_open=False
+        self.hide()
+        if selection is not None:
+            self.playback.row,self.playback.index=selection
+            self.zap_timer.start(50,True)
+
+    def direction(self,delta):
+        if self.playback.current() and channel_category(self.playback.current())=='live':
+            self.zap(delta)
+        elif delta<0:
+            MoviePlayer.left(self)
+        else:
+            MoviePlayer.right(self)
+
+    def zap(self,delta):
+        self.playback.move(delta)
+        self.zap_timer.start(250,True)
+
+    def change_bouquet(self,delta):
+        self.playback.change_bouquet(delta)
+        self.zap_timer.start(250,True)
+
+    def apply_zap(self):
+        channel=self.playback.current()
+        if channel:
+            try:
+                reference=playback_reference(channel)
+                self.session.nav.playService(reference)
+                self.cur_service=reference
+                if not self.panel_open:
+                    self.controls()
+            except Exception:
+                self.session.open(MessageBox,'Nie udało się uruchomić kanału. Sprawdź połączenie i wybierz inną pozycję.',MessageBox.TYPE_ERROR)
+
+    def finish(self):
+        self.close(self.playback.current())
+
+    def leavePlayer(self):
+        self.finish()
+
+    def leavePlayerOnExit(self):
+        self.finish()
+
+    def doEofInternal(self,playing):
+        self.controls()
+
+
+def playback_reference(channel):
+    service_type=4097 if settings.slowinternet.value else int(settings.player.value)
+    reference=eServiceReference(service_type,0,channel['url'])
+    if settings.slowinternet.value: reference.setData(7,1)
+    reference.setName(channel['name'])
+    return reference
+
 
 
 class IPTVHome(Screen):
@@ -281,7 +654,7 @@ class IPTVHome(Screen):
         for name in ('eyebrow', 'hero', 'summary', 'action0', 'action1', 'status', 'help'):
             self[name] = Label('')
         self['art'] = Pixmap()
-        for i in range(7):
+        for i in range(8):
             self['nav%d' % i] = Label('')
         for i in range(2):
             self['actionfocus%d' % i] = Label('')
@@ -460,7 +833,7 @@ class IPTVHome(Screen):
             self.area = 'hero'
         if self.area == 'nav':
             if direction in ('left', 'right'):
-                self.nav = max(0, min(6, self.nav + (-1 if direction == 'left' else 1)))
+                self.nav = max(0, min(7, self.nav + (-1 if direction == 'left' else 1)))
             elif direction == 'down':
                 self.area = 'hero'
         elif self.area == 'hero':
@@ -493,7 +866,7 @@ class IPTVHome(Screen):
     def render(self):
         if self.disposed:
             return
-        for i in range(7):
+        for i in range(8):
             self['nav%d' % i].show() if self.nav == i else self['nav%d' % i].hide()
         for i in range(2):
             self['actionfocus%d' % i].show() if self.area == 'hero' and self.action == i else self['actionfocus%d' % i].hide()
@@ -540,10 +913,12 @@ class IPTVHome(Screen):
 
     def activate(self):
         if self.area == 'nav':
-            if self.nav == 5:
+            if self.nav == 6:
                 self.session.openWithCallback(self.searched, IPTVKeyboard, title='Szukaj na swojej liście', text=self.query)
-            elif self.nav == 6:
+            elif self.nav == 7:
                 self.playlists()
+            elif self.nav == 5:
+                self.bouquets()
             else:
                 self.category = ('start', 'live', 'movies', 'series', 'favourites')[self.nav]
                 self.query = ''
@@ -636,25 +1011,50 @@ class IPTVHome(Screen):
         else:
             self.render()
 
+    def playback_context(self):
+        channels, category, query = self.channels, self.category, self.query
+        favourites = frozenset(self.favourites)
+        return PlaybackContext(self.rows, self.row, self.column, selected=self.current(),
+                               loader=lambda: bouquet_rows(channels, category, query, favourites))
+
+    def bouquets(self):
+        self.bouquet_context = self.playback_context()
+        self.session.openWithCallback(self.bouquet_chosen, IPTVNavigator,
+                                      self.bouquet_context, focus='bouquets')
+
+    def bouquet_chosen(self, selection=None):
+        if selection is not None and not self.disposed:
+            self.bouquet_context.row, self.bouquet_context.index = selection
+            self.open_playback(self.bouquet_context)
+
     def play(self):
-        channel = self.current()
+        if self.current() and not self.player_open and not self.disposed:
+            self.open_playback(self.playback_context())
+
+    def open_playback(self, context):
+        channel = context.current()
         if self.player_open or self.disposed or not channel:
             return
-        service_type = 4097 if settings.slowinternet.value else int(settings.player.value)
-        reference = eServiceReference(service_type, 0, channel['url'])
-        if settings.slowinternet.value:
-            reference.setData(7, 1)
-        reference.setName(channel['name'])
+        reference = playback_reference(channel)
         self.player_open = True
         try:
-            self.session.openWithCallback(self.player_closed, MoviePlayer, reference)
+            self.session.openWithCallback(self.player_closed, IPTVPlayer, reference, context)
         except Exception:
             self.player_open = False
             self.status_text = 'Nie udało się uruchomić odtwarzacza. Niebieski: ustawienia'
             self.render()
 
-    def player_closed(self, *args):
+    def player_closed(self, channel=None):
         self.player_open = False
+        if channel and not self.disposed:
+            self.featured = channel
+            position = find_channel_position(self.rows, channel)
+            if position:
+                self.row, self.column = position
+                self.first_row = max(0,self.row-1)
+                self.area = 'shelf'
+            else:
+                self.area = 'hero'
         self.render()
 
     def update_art(self, selected):
@@ -1157,6 +1557,7 @@ def main(session, **kwargs):
 def Plugins(**kwargs):
     return [PluginDescriptor(name='IPTV PL', description='Odtwarzacz list IPTV M3U',
                              where=PluginDescriptor.WHERE_PLUGINMENU, fnc=main)]
+
 
 
 

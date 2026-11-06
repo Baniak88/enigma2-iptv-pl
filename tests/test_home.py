@@ -41,14 +41,14 @@ def channel(i,group='Sport',logo=''):
 
 class StreamingTests(unittest.TestCase):
     def build(self,slow=False):
-        names=('fit_skin','streaming_skin','channel_key','channel_category','IPTVHome','IPTVBrowser')
+        names=('fit_skin','streaming_skin','channel_key','channel_category','bouquet_rows','find_channel_position','PlaybackContext','playback_reference','IPTVHome','IPTVBrowser')
         nodes=[n for n in TREE.body if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name in names]
         settings=NS(source=NS(value='/nonexistent/iptv.m3u'),slowinternet=NS(value=slow),player=NS(value='5001'),favourites=NS(value='[]',save=MagicMock()))
         ns={'Screen':Screen,'Label':Label,'Pixmap':Label,'MenuList':MagicMock(),'ActionMap':lambda *a:None,
             'settings':settings,'ePicLoad':MagicMock(),'deferToThread':MagicMock(),
             'discard_playlist':playlist.discard_playlist,'take_playlist_preview':playlist.take_playlist_preview,'playlist_error_message':playlist.playlist_error_message,
             'load_playlist':playlist.load_playlist,'load_artwork':playlist.load_artwork,
-            'MoviePlayer':object,'eServiceReference':Ref,'configfile':MagicMock(),
+            'MoviePlayer':object,'IPTVPlayer':object,'IPTVNavigator':object,'eServiceReference':Ref,'configfile':MagicMock(),
             'MessageBox':NS(TYPE_INFO=1),'IPTVSettings':object,'VirtualKeyBoard':object}
         exec(compile(ast.Module(body=nodes,type_ignores=[]),'<ui>','exec'),ns)
         self.ns=ns
@@ -127,7 +127,7 @@ class StreamingTests(unittest.TestCase):
 
     def test_playlist_menu_and_activation_save_then_reload(self):
         h=self.build(); marker=object(); self.ns['IPTVPlaylistSources']=marker
-        h.nav=6; h.activate()
+        h.nav=7; h.activate()
         self.assertIs(h.session.openWithCallback.call_args.args[1],marker)
         self.ns['settings'].source.save=MagicMock()
         h.playlist_selected('/etc/enigma2/iptvpl/playlists/test.m3u')
@@ -173,6 +173,14 @@ class StreamingTests(unittest.TestCase):
             self.assertEqual(h.current()['name'],'Kanał 11')
             self.assertEqual(sum(len(items) for _,items in h.rows),1)
             h.cleanup(); self.assertFalse(Path(path).exists())
+
+    def test_return_from_player_restores_selected_channel_page(self):
+        h=self.build(); h.channels=[channel(i) for i in range(15)]; h.rebuild_rows()
+        h.player_closed(channel(11))
+        self.assertEqual((h.row,h.column),(0,11))
+        self.assertEqual(h.current()['name'],'Kanał 11')
+        self.assertTrue(h['frame0_1'].visible)
+        self.assertFalse(h.player_open)
 
     def test_skin_bounds_all_resolutions(self):
         h=self.build()

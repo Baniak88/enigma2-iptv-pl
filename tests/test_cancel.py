@@ -24,7 +24,7 @@ class CancelTests(unittest.TestCase):
                 with self.subTest(screen=cls.name,callback=name):
                     ns={'settings':MagicMock(),'configfile':MagicMock()}
                     exec(compile(ast.Module(body=[methods[name]],type_ignores=[]),'<callback>','exec'),ns)
-                    screen=SimpleNamespace(disposed=False,player_open=True,render=MagicMock(),close=MagicMock(),reload=MagicMock(),selection_changed=MagicMock())
+                    screen=SimpleNamespace(disposed=False,player_open=True,render=MagicMock(),hide=MagicMock(),close=MagicMock(),reload=MagicMock(),selection_changed=MagicMock())
                     callback=MethodType(ns[name],screen)
                     callback()  # Exact invocation from Session.processDelay after EXIT.
                     screen.close.assert_not_called()
