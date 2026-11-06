@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-from Plugins.Extensions.IPTVPL.sources import PlaylistUpload, import_playlist, import_local_playlist, saved_playlists
+from Plugins.Extensions.IPTVPL.sources import PlaylistUpload, import_playlist, import_local_playlist, saved_playlists, validate_playlist_url
 
 DATA=b'#EXTM3U\n#EXTINF:-1 group-title="Polskie",TV\nhttps://example.com/live\n'
 
@@ -76,6 +76,34 @@ class SourceTests(unittest.TestCase):
             for _ in range(10): self.assertEqual(self.request(r,'POST','/upload',DATA,code='wrong')[0],403)
             self.assertEqual(self.request(r,'POST','/upload',DATA)[0],429)
             self.assertEqual(saved_playlists(d),[])
+
+    def test_pasted_full_url_preserves_credentials_and_parameters(self):
+        value='https://example.com/get.php?username=ab%2Bcd&password=p%26q+z&type=m3u_plus&output=ts&token='+('a'*8000)
+        with tempfile.TemporaryDirectory() as d:
+            r=self.receiver(d)
+            body=json.dumps({'url':value}).encode('utf-8')
+            status,reply=self.request(r,'POST','/url',body)
+            self.assertEqual(status,200)
+            source,count=r.events.get(timeout=1)
+            self.assertEqual(source,value); self.assertIsNone(count)
+            self.assertEqual(saved_playlists(d),[])
+            self.assertNotIn('username',reply.decode())
+            status,page=self.request(r,'GET')
+            self.assertIn(b'<textarea',page)
+            self.assertIn(b'id="playlist-url"',page)
+            self.assertNotIn(b'type="url"',page)
+
+    def test_url_validation_bad_payload_and_pin(self):
+        for value in ('ftp://example.com/a','https://','https://example.com/bad url','https://example.com/a\nb',None,'https://example.com:bad/a','https://example.com/'+('a'*17000)):
+            with self.assertRaises(ValueError): validate_playlist_url(value)
+        self.assertEqual(validate_playlist_url('  https://example.com/get.php?a=1&b=2  '),'https://example.com/get.php?a=1&b=2')
+        with tempfile.TemporaryDirectory() as d:
+            r=self.receiver(d)
+            self.assertEqual(self.request(r,'POST','/url',b'{"url":"https://example.com/a"}',code='wrong')[0],403)
+            self.assertTrue(r.events.empty())
+            for data in (b'bad json',b'[]',b'{"url":5}',b'{"url":"file:///etc/passwd"}'):
+                self.assertEqual(self.request(r,'POST','/url',data)[0],400)
+            self.assertTrue(r.events.empty())
 
     def test_new_screens_xml_and_poll_on_gui(self):
         tree=ast.parse((ROOT/'Plugins/Extensions/IPTVPL/plugin.py').read_text())

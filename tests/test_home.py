@@ -134,6 +134,15 @@ class StreamingTests(unittest.TestCase):
         self.ns['deferToThread'].assert_called_once()
         self.assertEqual(h.category,'start')
 
+    def test_focus_markers_do_not_cover_button_text(self):
+        h=self.build(); root=ET.fromstring(h.skin)
+        by_name={n.get('name'):n for n in root if n.get('name')}
+        for i in range(2):
+            button=by_name['action%d'%i]; marker=by_name['actionfocus%d'%i]
+            by=int(button.get('position').split(',')[1]); bh=int(button.get('size').split(',')[1])
+            my=int(marker.get('position').split(',')[1])
+            self.assertGreaterEqual(my,by+bh)
+
     def test_skin_bounds_all_resolutions(self):
         h=self.build()
         for w,hh in [(1280,720),(1920,1080),(3840,2160)]:

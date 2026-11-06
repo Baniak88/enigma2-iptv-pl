@@ -101,13 +101,19 @@ od czcionek i możliwości obrazu dekodera; nie jest identyczny z wizualizacją.
 W górnym menu wybierz **Playlisty**. Możesz też wejść w ustawienia
 (niebieski / MENU) i nacisnąć **żółty**.
 
-### Z telefonu przez przeglądarkę
+### Z telefonu: wklejenie URL lub przesłanie pliku
 
-1. Wybierz **Prześlij M3U z telefonu**.
+1. Wybierz **Wklej URL / prześlij plik z telefonu**.
 2. Połącz telefon z tą samą siecią co dekoder.
 3. Otwórz adres pokazany na telewizorze, np. `http://192.168.4.128:8099`.
-4. Wpisz sześciocyfrowy kod z telewizora, wybierz plik i naciśnij **Wyślij playlistę**.
-5. Po potwierdzeniu naciśnij **zielony** na pilocie, aby wybrać przesłaną listę.
+4. Wpisz sześciocyfrowy kod z telewizora. W polu **Wklej cały adres URL M3U** przytrzymaj palcem i wybierz **Wklej**, potem **Wyślij adres do dekodera**.
+   Alternatywnie w sekcji **Lub prześlij plik** wybierz plik M3U i naciśnij **Wyślij plik playlisty**.
+5. Po potwierdzeniu naciśnij **zielony** na pilocie, aby zapisać wybrany URL lub plik jako źródło i wczytać listę.
+
+Cały URL jest przekazywany bez zmiany parametrów, kodowania procentowego ani znaków `&` i `+`.
+Nie musi kończyć się na `.m3u` — obsługiwane są adresy typu `https://dostawca.pl/get.php?username=...&password=...&type=m3u_plus`.
+Limit adresu wynosi 16384 znaków. Adres nie jest pobierany ani aktywowany przed zatwierdzeniem pilotem.
+Nie pokazujemy go w komunikacie potwierdzenia, ponieważ może zawierać hasło.
 
 Ekran importu musi pozostać otwarty. EXIT kończy odbieranie plików.
 Serwer działa tylko podczas otwartego ekranu; kod zmienia się przy każdym otwarciu.
@@ -181,5 +187,6 @@ Nie deklarujemy przetestowania na fizycznym odbiorniku.
 
 Usuwanie: usuń katalog `/usr/lib/enigma2/python/Plugins/Extensions/IPTVPL`
 i uruchom ponownie GUI.
+
 
 

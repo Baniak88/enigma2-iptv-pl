@@ -14,7 +14,7 @@ from Components.config import (config, configfile, ConfigSubsection, ConfigText,
                                ConfigSelection, ConfigYesNo, getConfigListEntry)
 from twisted.internet.threads import deferToThread
 from .playlist import load_playlist, load_artwork
-from .sources import PlaylistUpload, saved_playlists, import_local_playlist
+from .sources import PlaylistUpload, saved_playlists, import_local_playlist, validate_playlist_url
 
 config.plugins.iptvpl = ConfigSubsection()
 settings = config.plugins.iptvpl
@@ -59,9 +59,9 @@ def streaming_skin():
       <widget name="hero" position="44,141" size="760,85" font="Regular;41" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
       <widget name="summary" position="44,233" size="760,56" font="Regular;23" foregroundColor="#00BFBFBF" backgroundColor="#00101010" />
       <widget name="art" position="855,103" size="370,186" alphatest="blend" />
-      <widget name="actionfocus0" position="40,300" size="250,56" backgroundColor="#00E50914" />
+      <widget name="actionfocus0" position="44,358" size="242,4" backgroundColor="#00E50914" />
       <widget name="action0" position="44,304" size="242,48" font="Regular;24" halign="center" valign="center" foregroundColor="#00101010" backgroundColor="#00FFFFFF" />
-      <widget name="actionfocus1" position="302,300" size="322,56" backgroundColor="#00FFFFFF" />
+      <widget name="actionfocus1" position="306,358" size="314,4" backgroundColor="#00FFFFFF" />
       <widget name="action1" position="306,304" size="314,48" font="Regular;23" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00303030" />
       <widget name="status" position="650,309" size="575,40" font="Regular;19" foregroundColor="#00BFBFBF" backgroundColor="#00101010" />
       <widget name="help" position="44,681" size="1180,30" font="Regular;18" foregroundColor="#00BFBFBF" backgroundColor="#00101010" />''']
@@ -75,7 +75,7 @@ def streaming_skin():
         for column in range(5):
             x = 44 + column * 238
             name = '%d_%d' % (row, column)
-            elements.append('<widget name="frame%s" position="%d,%d" size="230,102" backgroundColor="#00FFFFFF" />' % (name, x - 4, y + 33))
+            elements.append('<widget name="frame%s" position="%d,%d" size="222,4" backgroundColor="#00FFFFFF" />' % (name, x, y + 133))
             elements.append('<widget name="card%s" position="%d,%d" size="222,94" font="Regular;23" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00262626" />' % (name, x, y + 37))
     elements.append('</screen>')
     return ''.join(elements)
@@ -300,7 +300,7 @@ class IPTVHome(Screen):
         else:
             self['eyebrow'].setText('TWOJA TELEWIZJA. TWÓJ WYBÓR.')
             self['hero'].setText('Co oglądamy?')
-            self['summary'].setText('Brak wyników wyszukiwania.' if self.query else 'Brak pozycji. Wybierz inną kategorię lub dodaj źródło M3U.')
+            self['summary'].setText('Brak wyników wyszukiwania.' if self.query else 'Dodaj playlistę: wklej URL z telefonu lub wybierz plik.')
             self['action0'].setText('Zmień źródło')
             self['action1'].setText('Ustawienia')
         self['status'].setText(self.status_text)
@@ -344,7 +344,7 @@ class IPTVHome(Screen):
         elif self.area == 'hero' and self.action == 1:
             self.info() if self.current() else self.setup()
         else:
-            self.play() if self.current() else self.setup()
+            self.play() if self.current() else self.playlists()
 
     def searched(self, text):
         if text is not None:
@@ -534,7 +534,7 @@ class IPTVPlaylistSources(Screen):
         Screen.__init__(self, session)
         self.busy = False
         self.disposed = False
-        choices = [('Prześlij M3U z telefonu', 'upload', None),
+        choices = [('Wklej URL / prześlij plik z telefonu', 'upload', None),
                    ('Wybierz plik z dekodera / USB', 'file', None),
                    ('Dodaj adres URL playlisty', 'url', None)]
         choices += [(name, 'saved', path) for name, path in saved_playlists()]
@@ -567,18 +567,14 @@ class IPTVPlaylistSources(Screen):
             self.close(path)
 
     def url_selected(self, value):
-        from urllib.parse import urlsplit
         if value is None:
             return
-        value = value.strip()
         try:
-            valid = urlsplit(value).scheme.lower() in ('http', 'https') and bool(urlsplit(value).netloc)
+            source = validate_playlist_url(value)
         except ValueError:
-            valid = False
-        if valid:
-            self.close(value)
-        else:
-            self['status'].setText('Wpisz pełny adres HTTP lub HTTPS playlisty M3U.')
+            self['status'].setText('Wklej pełny adres HTTP lub HTTPS playlisty M3U.')
+            return
+        self.close(source)
 
     def file_selected(self, path):
         if not path or self.disposed:
@@ -627,11 +623,11 @@ class IPTVPlaylistFile(Screen):
 
 class IPTVPlaylistUpload(Screen):
     skin = '''<screen name="IPTVPlaylistUpload" position="center,center" size="1100,620" flags="wfNoBorder" backgroundColor="#00101010" title="Prześlij playlistę">
-      <eLabel position="35,25" size="1030,55" text="Prześlij playlistę z telefonu" font="Regular;36" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
+      <eLabel position="35,25" size="1030,55" text="Dodaj playlistę z telefonu" font="Regular;36" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
       <eLabel position="35,110" size="1030,65" text="1. Połącz telefon z tą samą siecią Wi-Fi.\n2. Otwórz poniższy adres w przeglądarce telefonu:" font="Regular;25" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
       <widget name="address" position="35,200" size="1030,60" font="Regular;38" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
       <widget name="code" position="35,285" size="1030,55" font="Regular;36" foregroundColor="#00E50914" backgroundColor="#00101010" />
-      <eLabel position="35,370" size="1030,75" text="3. Wpisz kod i wybierz plik M3U / M3U8 (do 8 MiB).\n4. Po przesłaniu naciśnij zielony przycisk pilota." font="Regular;25" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
+      <eLabel position="35,370" size="1030,75" text="3. Wpisz kod. Wklej cały adres URL lub wybierz plik M3U.\n4. Po przesłaniu naciśnij zielony przycisk pilota." font="Regular;25" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
       <widget name="status" position="35,470" size="1030,70" font="Regular;23" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
       <eLabel position="35,565" size="1030,35" text="Zielony: użyj przesłanej playlisty    EXIT: zakończ przesyłanie" font="Regular;23" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
     </screen>'''
@@ -645,7 +641,7 @@ class IPTVPlaylistUpload(Screen):
         self.disposed = False
         self['address'] = Label('Uruchamianie…')
         self['code'] = Label('Kod: %s' % self.receiver.code)
-        self['status'] = Label('Przesyłanie działa tylko przy otwartym ekranie.')
+        self['status'] = Label('W przeglądarce możesz wkleić cały URL lub wysłać plik.')
         self['actions'] = ActionMap(['OkCancelActions', 'ColorActions'],
                                    {'cancel': self.close, 'green': self.use_file}, -1)
         self.timer = eTimer()
@@ -678,14 +674,15 @@ class IPTVPlaylistUpload(Screen):
             except Empty:
                 break
             self.path = path
-            self['status'].setText('Gotowe: %d pozycji. Zielony: użyj tej playlisty.' % count)
+            self['status'].setText('Adres odebrany. Zielony: zapisz i wczytaj playlistę.' if count is None
+                                   else 'Gotowe: %d pozycji. Zielony: użyj tej playlisty.' % count)
 
     def use_file(self):
         self.poll()
         if self.path:
             self.close(self.path)
         else:
-            self['status'].setText('Najpierw prześlij plik z telefonu.')
+            self['status'].setText('Najpierw wyślij adres URL lub plik z telefonu.')
 
     def cleanup(self):
         self.disposed = True
@@ -880,5 +877,6 @@ def main(session, **kwargs):
 def Plugins(**kwargs):
     return [PluginDescriptor(name='IPTV PL', description='Odtwarzacz list IPTV M3U',
                              where=PluginDescriptor.WHERE_PLUGINMENU, fnc=main)]
+
 
 
