@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from enigma import eServiceReference, gFont
+from enigma import eServiceReference
 from Plugins.Plugin import PluginDescriptor
 from Screens.Screen import Screen
 from Screens.MessageBox import MessageBox
@@ -53,15 +53,13 @@ Domyślny odtwarzacz jest zalecany dla większości kanałów." font="Regular;24
 class IPTVGroups(Screen):
     skin = '''<screen name="IPTVGroups" position="center,center" size="760,580" flags="wfNoBorder" backgroundColor="#00F2F2F7" title="Grupy">
       <eLabel position="30,25" size="700,60" text="Grupy kanałów" font="Regular;38" foregroundColor="#001C1C1E" backgroundColor="#00F2F2F7" />
-      <widget name="groups" position="30,110" size="700,360" foregroundColor="#001C1C1E" backgroundColor="#00FFFFFF" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00007AFF" scrollbarMode="showOnDemand" />
+      <widget name="groups" font="Regular;27" itemHeight="60" position="30,110" size="700,360" foregroundColor="#001C1C1E" backgroundColor="#00FFFFFF" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00007AFF" scrollbarMode="showOnDemand" />
       <eLabel position="30,505" size="700,45" text="OK  Wybierz     EXIT  Wróć" font="Regular;24" foregroundColor="#00007AFF" backgroundColor="#00F2F2F7" />
     </screen>'''
 
     def __init__(self, session, choices):
         Screen.__init__(self, session)
         self['groups'] = MenuList(choices)
-        self['groups'].l.setFont(gFont('Regular', 27))
-        self['groups'].l.setItemHeight(60)
         self['actions'] = ActionMap(['OkCancelActions'],
                                    {'ok': self.choose, 'cancel': self.close}, -1)
 
@@ -74,7 +72,7 @@ class IPTVBrowser(Screen):
       <eLabel position="35,25" size="700,55" text="Telewizja" font="Regular;42" foregroundColor="#001C1C1E" backgroundColor="#00F2F2F7" />
       <eLabel position="840,35" size="225,40" text="IPTV PL" halign="right" font="Regular;24" foregroundColor="#00007AFF" backgroundColor="#00F2F2F7" />
       <widget name="status" position="35,90" size="1030,40" font="Regular;23" foregroundColor="#00636366" backgroundColor="#00F2F2F7" />
-      <widget name="channels" position="35,145" size="650,360" foregroundColor="#001C1C1E" backgroundColor="#00FFFFFF" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00007AFF" scrollbarMode="showOnDemand" />
+      <widget name="channels" font="Regular;27" itemHeight="60" position="35,145" size="650,360" foregroundColor="#001C1C1E" backgroundColor="#00FFFFFF" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00007AFF" scrollbarMode="showOnDemand" />
       <eLabel position="715,145" size="350,360" backgroundColor="#00FFFFFF" />
       <eLabel position="740,170" size="300,35" text="WYBRANY KANAŁ" font="Regular;19" foregroundColor="#00636366" backgroundColor="#00FFFFFF" />
       <widget name="selection" position="740,225" size="300,140" font="Regular;29" foregroundColor="#001C1C1E" backgroundColor="#00FFFFFF" />
@@ -90,8 +88,6 @@ class IPTVBrowser(Screen):
         self.disposed = False
         self['status'] = Label('')
         self['channels'] = MenuList([])
-        self['channels'].l.setFont(gFont('Regular', 27))
-        self['channels'].l.setItemHeight(60)
         self['selection'] = Label('Twoje kanały')
         self['detail'] = Label('Dodaj listę w ustawieniach')
         self['channels'].onSelectionChanged.append(self.selection_changed)
