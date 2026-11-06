@@ -154,6 +154,19 @@ Rozszerzenie M3U8 dotyczy list kanałów; pojedynczy manifest HLS z względnymi
 segmentami nie jest playlistą kanałów.
 Wymagany jest osobny test interfejsu na odbiorniku.
 
+## Przyciski w ustawieniach i imporcie
+
+Ustawienia mają osobne przyciski **Zapisz** (zielony), **Playlisty** (żółty)
+i **Anuluj** (czerwony / EXIT), z jasnymi etykietami oraz oznaczeniami pilota.
+Podpowiedź pod listą ustawień opisuje aktualnie wybrane pole.
+
+Ekrany wyboru playlist i plików mają przyciski **Wybierz**, **Folder list**
+(niebieski w przeglądarce plików) i **Wróć**.
+Na ekranie przesyłania przycisk zmienia etykietę w zależności od stanu:
+**Oczekiwanie na listę**, **Pobieranie…**, **Otwórz playlistę** lub **Popraw źródło**.
+Gotową listę można otworzyć zielonym przyciskiem albo OK.
+Czerwony lub EXIT zamyka ekran przesyłania bez zmiany źródła.
+
 ## Pilot
 
 - **Strzałki**: wybór zakładki, przycisku, pozycji lub grupy.
@@ -192,6 +205,7 @@ Nie deklarujemy przetestowania na fizycznym odbiorniku.
 
 Usuwanie: usuń katalog `/usr/lib/enigma2/python/Plugins/Extensions/IPTVPL`
 i uruchom ponownie GUI.
+
 
 
 

@@ -531,9 +531,14 @@ def channel_category(channel):
 class IPTVPlaylistSources(Screen):
     skin = '''<screen name="IPTVPlaylistSources" position="center,center" size="1100,620" flags="wfNoBorder" backgroundColor="#00101010" title="Playlisty">
       <eLabel position="35,25" size="1030,55" text="Twoje playlisty" font="Regular;38" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
-      <widget name="sources" position="35,110" size="1030,340" font="Regular;25" itemHeight="55" foregroundColor="#00FFFFFF" backgroundColor="#00262626" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00E50914" scrollbarMode="showOnDemand" />
-      <widget name="status" position="35,470" size="1030,75" font="Regular;23" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
-      <eLabel position="35,565" size="1030,35" text="OK: wybierz    EXIT: wróć" font="Regular;23" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
+      <widget name="sources" position="35,110" size="1030,310" font="Regular;25" itemHeight="55" foregroundColor="#00FFFFFF" backgroundColor="#00262626" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00E50914" scrollbarMode="showOnDemand" />
+      <widget name="status" position="35,440" size="1030,55" font="Regular;23" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
+      <eLabel position="35,510" size="6,58" backgroundColor="#00BBBBBB" />
+      <eLabel text="Wybierz" position="41,510" size="499,58" font="Regular;25" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00262626" />
+      <eLabel position="35,574" size="505,24" text="OK" font="Regular;18" halign="center" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
+<eLabel position="560,510" size="6,58" backgroundColor="#00EF4554" />
+      <eLabel text="Wróć" position="566,510" size="499,58" font="Regular;25" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00262626" />
+      <eLabel position="560,574" size="505,24" text="CZERWONY / EXIT" font="Regular;18" halign="center" foregroundColor="#00EF4554" backgroundColor="#00101010" />
     </screen>'''
 
     def __init__(self, session):
@@ -547,7 +552,7 @@ class IPTVPlaylistSources(Screen):
         choices += [(name, 'saved', path) for name, path in saved_playlists()]
         self['sources'] = MenuList(choices)
         self['status'] = Label('Wybierz sposób dodania lub jedną z zapisanych playlist.')
-        self['actions'] = ActionMap(['OkCancelActions'], {'ok': self.choose, 'cancel': self.close}, -1)
+        self['actions'] = ActionMap(['OkCancelActions', 'ColorActions'], {'ok': self.choose, 'cancel': self.close, 'red': self.close}, -1)
         self.onClose.append(self.cleanup)
 
     def cleanup(self):
@@ -604,8 +609,16 @@ class IPTVPlaylistSources(Screen):
 class IPTVPlaylistFile(Screen):
     skin = '''<screen name="IPTVPlaylistFile" position="center,center" size="1100,620" flags="wfNoBorder" backgroundColor="#00101010" title="Wybierz plik M3U">
       <eLabel position="35,25" size="1030,55" text="Wybierz plik M3U" font="Regular;38" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
-      <widget name="files" position="35,110" size="1030,390" font="Regular;25" itemHeight="50" foregroundColor="#00FFFFFF" backgroundColor="#00262626" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00E50914" scrollbarMode="showOnDemand" />
-      <eLabel position="35,530" size="1030,65" text="OK: otwórz katalog / wybierz plik    Niebieski: /etc/enigma2/    EXIT: wróć" font="Regular;23" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
+      <widget name="files" position="35,110" size="1030,360" font="Regular;25" itemHeight="50" foregroundColor="#00FFFFFF" backgroundColor="#00262626" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00E50914" scrollbarMode="showOnDemand" />
+      <eLabel position="35,510" size="6,58" backgroundColor="#00BBBBBB" />
+      <eLabel text="Otwórz / wybierz" position="41,510" size="324,58" font="Regular;25" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00262626" />
+      <eLabel position="35,574" size="330,24" text="OK" font="Regular;18" halign="center" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
+<eLabel position="385,510" size="6,58" backgroundColor="#00558EFF" />
+      <eLabel text="Folder list" position="391,510" size="324,58" font="Regular;25" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00262626" />
+      <eLabel position="385,574" size="330,24" text="NIEBIESKI" font="Regular;18" halign="center" foregroundColor="#00558EFF" backgroundColor="#00101010" />
+<eLabel position="735,510" size="6,58" backgroundColor="#00EF4554" />
+      <eLabel text="Wróć" position="741,510" size="324,58" font="Regular;25" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00262626" />
+      <eLabel position="735,574" size="330,24" text="CZERWONY / EXIT" font="Regular;18" halign="center" foregroundColor="#00EF4554" backgroundColor="#00101010" />
     </screen>'''
 
     def __init__(self, session):
@@ -615,7 +628,7 @@ class IPTVPlaylistFile(Screen):
         self['files'] = FileList('/media/', matchingPattern=r'(?i)^.*\.(m3u|m3u8)$', useServiceRef=False)
         self['actions'] = ActionMap(['OkCancelActions', 'ColorActions'],
                                    {'ok': self.choose, 'cancel': self.close,
-                                    'blue': lambda: self['files'].changeDir('/etc/enigma2/')}, -1)
+                                    'blue': lambda: self['files'].changeDir('/etc/enigma2/'), 'red': self.close}, -1)
 
     def choose(self):
         import os
@@ -634,9 +647,14 @@ class IPTVPlaylistUpload(Screen):
       <eLabel position="35,110" size="1030,65" text="1. Połącz telefon z tą samą siecią Wi-Fi.\n2. Otwórz poniższy adres w przeglądarce telefonu:" font="Regular;25" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
       <widget name="address" position="35,200" size="1030,60" font="Regular;38" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
       <widget name="code" position="35,285" size="1030,55" font="Regular;36" foregroundColor="#00E50914" backgroundColor="#00101010" />
-      <eLabel position="35,370" size="1030,75" text="3. Wpisz kod. Wklej cały adres URL lub wybierz plik M3U.\n4. Poczekaj na wynik pobierania. Zielony: otwórz listę." font="Regular;25" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
-      <widget name="status" position="35,470" size="1030,70" font="Regular;23" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
-      <eLabel position="35,565" size="1030,35" text="Zielony: użyj przesłanej playlisty    EXIT: zakończ przesyłanie" font="Regular;23" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
+      <eLabel position="35,360" size="1030,75" text="3. Wpisz kod. Wklej cały adres URL lub wybierz plik M3U.\n4. Poczekaj na wynik pobierania. Zielony: otwórz listę." font="Regular;25" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
+      <widget name="status" position="35,447" size="1030,58" font="Regular;21" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
+      <eLabel position="35,516" size="6,58" backgroundColor="#0035B66A" />
+      <widget name="button_use" position="41,516" size="499,58" font="Regular;25" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00262626" />
+      <eLabel position="35,580" size="505,24" text="ZIELONY / OK" font="Regular;18" halign="center" foregroundColor="#0035B66A" backgroundColor="#00101010" />
+<eLabel position="560,516" size="6,58" backgroundColor="#00EF4554" />
+      <eLabel text="Zamknij" position="566,516" size="499,58" font="Regular;25" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00262626" />
+      <eLabel position="560,580" size="505,24" text="CZERWONY / EXIT" font="Regular;18" halign="center" foregroundColor="#00EF4554" backgroundColor="#00101010" />
     </screen>'''
 
     def __init__(self, session):
@@ -646,11 +664,12 @@ class IPTVPlaylistUpload(Screen):
         self.receiver = PlaylistUpload(timeout=60 if settings.slowinternet.value else 20)
         self.path = None
         self.disposed = False
+        self['button_use'] = Label('Oczekiwanie na listę')
         self['address'] = Label('Uruchamianie…')
         self['code'] = Label('Kod: %s' % self.receiver.code)
         self['status'] = Label('W przeglądarce możesz wkleić cały URL lub wysłać plik.')
         self['actions'] = ActionMap(['OkCancelActions', 'ColorActions'],
-                                   {'cancel': self.close, 'green': self.use_file}, -1)
+                                   {'cancel': self.close, 'red': self.close, 'green': self.use_file, 'ok': self.use_file}, -1)
         self.timer = eTimer()
         self.timer.callback.append(self.poll)
         self.onFirstExecBegin.append(self.start)
@@ -676,6 +695,9 @@ class IPTVPlaylistUpload(Screen):
     def poll(self):
         from queue import Empty
         state = self.receiver.download_status()
+        if not self.disposed:
+            self['button_use'].setText({'idle': 'Oczekiwanie na listę', 'downloading': 'Pobieranie…',
+                                        'ready': 'Otwórz playlistę', 'error': 'Popraw źródło'}.get(state['state'], 'Oczekiwanie…'))
         if not self.disposed and state['state'] != 'idle':
             self['status'].setText(state['message'])
         while not self.disposed:
@@ -709,24 +731,47 @@ class IPTVPlaylistUpload(Screen):
 
 class IPTVSettings(Screen, ConfigListScreen):
     skin = '''<screen name="IPTVSettings" position="center,center" size="1100,620" flags="wfNoBorder" backgroundColor="#00101010" title="Ustawienia">
-      <eLabel position="35,25" size="1030,55" text="Ustawienia" font="Regular;40" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
-      <eLabel position="35,95" size="1030,40" text="TWOJA TELEWIZJA" font="Regular;21" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
-      <widget name="config" position="35,145" size="1030,210" itemHeight="65" font="Regular;26" foregroundColor="#00FFFFFF" backgroundColor="#00262626" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00E50914" scrollbarMode="showOnDemand" />
-      <eLabel position="35,360" size="1030,105" text="Wpisz adres listy M3U lub ścieżkę pliku.
-Wolny internet: buforowanie GStreamer i dłuższe oczekiwanie na listę." font="Regular;24" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
-      <widget name="help" position="35,515" size="1030,75" font="Regular;23" foregroundColor="#00E50914" backgroundColor="#00101010" />
-    </screen>'''
+      <eLabel position="35,25" size="1030,52" text="Ustawienia" font="Regular;38" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
+      <eLabel position="35,88" size="1030,30" text="Twoja playlista i preferencje odtwarzania" font="Regular;22" foregroundColor="#00AAAAAA" backgroundColor="#00101010" />
+      <widget name="config" position="35,145" size="1030,210" itemHeight="65" font="Regular;26" foregroundColor="#00FFFFFF" backgroundColor="#00202020" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#007A1020" scrollbarMode="showOnDemand" />
+      <eLabel position="35,380" size="1030,24" text="PODPOWIEDŹ" font="Regular;18" foregroundColor="#00999999" backgroundColor="#00101010" />
+      <widget name="help" position="35,418" size="1030,64" font="Regular;23" foregroundColor="#00CCCCCC" backgroundColor="#00101010" />
+      <eLabel position="35,516" size="6,58" backgroundColor="#0035B66A" />
+      <eLabel text="Zapisz" position="41,516" size="324,58" font="Regular;25" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00262626" />
+      <eLabel position="35,580" size="330,24" text="ZIELONY" font="Regular;18" halign="center" foregroundColor="#0035B66A" backgroundColor="#00101010" />
+<eLabel position="385,516" size="6,58" backgroundColor="#00E6B93C" />
+      <eLabel text="Playlisty" position="391,516" size="324,58" font="Regular;25" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00262626" />
+      <eLabel position="385,580" size="330,24" text="ŻÓŁTY" font="Regular;18" halign="center" foregroundColor="#00E6B93C" backgroundColor="#00101010" />
+<eLabel position="735,516" size="6,58" backgroundColor="#00EF4554" />
+      <eLabel text="Anuluj" position="741,516" size="324,58" font="Regular;25" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00262626" />
+      <eLabel position="735,580" size="330,24" text="CZERWONY / EXIT" font="Regular;18" halign="center" foregroundColor="#00EF4554" backgroundColor="#00101010" />
+</screen>'''
 
     def __init__(self, session):
         self.skin = fit_skin(type(self).skin)
         Screen.__init__(self, session)
-        ConfigListScreen.__init__(self, [getConfigListEntry('Lista kanałów', settings.source),
-                                      getConfigListEntry('Odtwarzanie', settings.player),
-                                      getConfigListEntry('Wolny internet (GStreamer)', settings.slowinternet)], session=session)
-        self['help'] = Label('Żółty: dodaj / wybierz playlistę\nZielony: zapisz   Czerwony: anuluj')
+        ConfigListScreen.__init__(self, [getConfigListEntry('Lista M3U', settings.source),
+                                      getConfigListEntry('Odtwarzacz', settings.player),
+                                      getConfigListEntry('Wolny internet', settings.slowinternet)], session=session)
+        self['help'] = Label('OK: edytuj adres. Przycisk Playlisty: wklej URL z telefonu lub wybierz plik.')
+        self['config'].onSelectionChanged.append(self.selection_help)
+        self.onLayoutFinish.append(self.selection_help)
         self['actions'] = ActionMap(['SetupActions', 'ColorActions'],
                                    {'save': self.save, 'green': self.save,
                                     'cancel': self.cancel, 'red': self.cancel, 'yellow': self.playlists}, -2)
+
+    def selection_help(self):
+        current = self['config'].getCurrent()
+        if not current:
+            return
+        field = current[1]
+        if field is settings.source:
+            text = 'OK: edytuj adres. Playlisty: wklej URL z telefonu lub wybierz plik.'
+        elif field is settings.player:
+            text = 'Lewo / prawo: wybierz odtwarzacz. Domyślny jest zalecany.'
+        else:
+            text = 'Lewo / prawo: włącz buforowanie przy słabym łączu. Start kanału może potrwać dłużej.'
+        self['help'].setText(text)
 
     def playlists(self):
         self.session.openWithCallback(self.playlist_selected, IPTVPlaylistSources)
@@ -894,6 +939,7 @@ def main(session, **kwargs):
 def Plugins(**kwargs):
     return [PluginDescriptor(name='IPTV PL', description='Odtwarzacz list IPTV M3U',
                              where=PluginDescriptor.WHERE_PLUGINMENU, fnc=main)]
+
 
 
 
