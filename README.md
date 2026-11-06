@@ -42,6 +42,21 @@ Alternatywnie skopiuj katalog `Plugins/Extensions/IPTVPL` do
 `/usr/lib/enigma2/python/Plugins/Extensions/` i uruchom ponownie GUI.
 Archiwum jest paczką TAR, a nie pakietem IPK do instalacji przez opkg.
 
+## Wolny internet
+
+W ustawieniach (niebieski przycisk) włącz **Wolny internet (GStreamer)** i zapisz zielonym.
+Tryb wybiera dla odtwarzania typ 4097 oraz natywną flagę buforowania Enigma2
+(`reference.setData(7, 1)`). Nie zmienia globalnych ustawień dekodera ani nie zapisuje strumienia na dysku.
+W tym trybie wybór ServiceApp 5001/5002 jest pomijany; po wyłączeniu trybu znowu obowiązuje.
+Start kanału może potrwać dłużej. Odtwarzacz nie otwiera się wielokrotnie przy kolejnych naciśnięciach OK.
+
+Limit pojedynczego odczytu sieciowego listy wzrasta z 20 do 60 sekund; lista nadal jest wczytywana w tle.
+To nie jest limit ani gwarancja czasu uruchomienia kanału.
+Obsługa buforowania zależy od obrazu Enigma2 i protokołu; dla HLS i strumieni live
+odtwarzacz może stosować własne zasady. Tryb nie obniża automatycznie jakości kanału.
+Jeśli łącze jest stale za wolne, wybierz wersję SD/niższej jakości dostępną na swojej liście.
+Fizyczny odbiornik wymaga osobnego sprawdzenia.
+
 ## Pilot
 
 - **OK**: odtwarzanie zaznaczonego kanału w systemowym MoviePlayer.
