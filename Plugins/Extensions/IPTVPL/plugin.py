@@ -631,6 +631,8 @@ class IPTVHome(Screen):
         Screen.__init__(self, session)
         self.channels = []
         self.rows = []
+        self.pending_tv = False
+        self.rows_loading = False
         self.category = 'start'
         self.query = ''
         self.nav = 0
@@ -781,6 +783,8 @@ class IPTVHome(Screen):
     def failed(self, failure, request):
         if self.disposed or request != self.request_id:
             return
+        self.pending_tv = False
+        self.rows_loading = False
         self.loading = False
         self.status_text = playlist_error_message(getattr(failure, 'value', failure))
         self.render()
@@ -789,9 +793,11 @@ class IPTVHome(Screen):
             self['summary'].setText(self.status_text)
 
     def rebuild_rows(self):
+        self.rows_loading = False
         self.row_request += 1
         if getattr(self.channels, 'is_disk_catalogue', False):
             token = self.row_request
+            self.rows_loading = True
             self.rows = []
             self.featured = None
             self.row = self.column = self.first_row = 0
@@ -830,20 +836,25 @@ class IPTVHome(Screen):
         self.row = self.column = self.first_row = 0
         self.featured = rows[0][1][0] if rows else None
         self.render()
+        self.open_pending_tv()
 
     def catalogue_rows_ready(self, rows, token):
         if self.disposed or token != self.row_request:
             return
+        self.rows_loading = False
         self.rows = rows
         self.row = self.column = self.first_row = 0
         self.featured = rows[0][1][0] if rows else None
         self.status_text = '%d pozycji • %s' % (sum(len(items) for _, items in rows),
                             'zapisany katalog' if getattr(self.channels, 'from_cache', False) else 'katalog na dysku')
         self.render()
+        self.open_pending_tv()
 
     def catalogue_rows_failed(self, failure, token):
         if self.disposed or token != self.row_request:
             return
+        self.rows_loading = False
+        self.pending_tv = False
         self.status_text = playlist_error_message(getattr(failure, 'value', failure))
         self.render()
 
@@ -858,6 +869,8 @@ class IPTVHome(Screen):
         if self.area == 'nav':
             if direction in ('left', 'right'):
                 self.nav = max(0, min(7, self.nav + (-1 if direction == 'left' else 1)))
+                if self.nav != 1:
+                    self.pending_tv = False
             elif direction == 'down':
                 self.area = 'hero'
         elif self.area == 'hero':
@@ -905,9 +918,15 @@ class IPTVHome(Screen):
             self['action1'].setText('Więcej informacji')
         else:
             self['eyebrow'].setText('TWOJA TELEWIZJA. TWÓJ WYBÓR.')
-            self['hero'].setText('Co oglądamy?')
-            self['summary'].setText('Brak wyników wyszukiwania.' if self.query else 'Dodaj playlistę: wklej URL z telefonu lub wybierz plik.')
-            self['action0'].setText('Zmień źródło')
+            if self.loading or self.rows_loading:
+                self['hero'].setText('Wczytywanie playlisty' if self.loading else 'Przygotowywanie bukietów')
+                self['summary'].setText('Poczekaj na zakończenie. Bukiety TV otworzą się automatycznie.' if self.pending_tv else 'Lista jest przygotowywana w tle.')
+                self['action0'].setText('Oczekiwanie…')
+            else:
+                self['hero'].setText('Telewizja' if self.category == 'live' else 'Co oglądamy?')
+                message = 'Brak wyników wyszukiwania.' if self.query else ('Brak pozycji w tej kategorii.' if self.channels else 'Dodaj playlistę: wklej URL z telefonu lub wybierz plik.')
+                self['summary'].setText(message)
+                self['action0'].setText('Zmień źródło')
             self['action1'].setText('Ustawienia')
         self['status'].setText(self.status_text)
         self['help'].setText('Strzałki: wybierz  OK: otwórz  Zielony: odśwież  Żółty: moja lista  Niebieski: ustawienia  EXIT: wróć')
@@ -937,13 +956,16 @@ class IPTVHome(Screen):
 
     def activate(self):
         if self.area == 'nav':
-            if self.nav == 6:
+            if self.nav == 1:
+                self.open_tv()
+            elif self.nav == 6:
                 self.session.openWithCallback(self.searched, IPTVKeyboard, title='Szukaj na swojej liście', text=self.query)
             elif self.nav == 7:
                 self.playlists()
             elif self.nav == 5:
                 self.bouquets()
             else:
+                self.pending_tv = False
                 self.category = ('start', 'live', 'movies', 'series', 'favourites')[self.nav]
                 self.query = ''
                 self.rebuild_rows()
@@ -952,10 +974,29 @@ class IPTVHome(Screen):
         elif self.area == 'hero' and self.action == 1:
             self.info() if self.current() else self.setup()
         else:
+            if self.loading or self.rows_loading:
+                return
             self.play() if self.current() else self.playlists()
+
+    def open_tv(self):
+        self.category = 'live'
+        self.query = ''
+        self.pending_tv = True
+        if self.loading:
+            self.render()
+        elif self.channels:
+            self.rebuild_rows()
+        else:
+            self.start()
+
+    def open_pending_tv(self):
+        if self.pending_tv and not self.loading and not self.rows_loading and not self.disposed and self.channels:
+            self.pending_tv = False
+            self.bouquets()
 
     def searched(self, text=None):
         if text is not None:
+            self.pending_tv = False
             self.query = text.strip()
             self.category = 'start'
             self.rebuild_rows()
@@ -1004,6 +1045,7 @@ class IPTVHome(Screen):
             self.close()
 
     def playlists(self):
+        self.pending_tv = False
         self.session.openWithCallback(self.playlist_selected, IPTVPlaylistSources)
 
     def playlist_selected(self, source=None):
@@ -1017,6 +1059,7 @@ class IPTVHome(Screen):
             self.settings_closed(True)
 
     def setup(self):
+        self.pending_tv = False
         self.session.openWithCallback(self.settings_closed, IPTVSettings)
 
     def settings_closed(self, saved=False):
@@ -1042,6 +1085,7 @@ class IPTVHome(Screen):
                                loader=lambda: bouquet_rows(channels, category, query, favourites))
 
     def bouquets(self):
+        self.pending_tv = False
         self.bouquet_context = self.playback_context()
         self.session.openWithCallback(self.bouquet_chosen, IPTVNavigator,
                                       self.bouquet_context, focus='bouquets')
@@ -1581,6 +1625,7 @@ def main(session, **kwargs):
 def Plugins(**kwargs):
     return [PluginDescriptor(name='IPTV PL', description='Odtwarzacz list IPTV M3U',
                              where=PluginDescriptor.WHERE_PLUGINMENU, fnc=main)]
+
 
 
 

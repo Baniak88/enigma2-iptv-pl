@@ -169,6 +169,9 @@ class StreamingTests(unittest.TestCase):
             self.ns['deferToThread'].side_effect=lambda fn,*args,**kwargs: Deferred(fn(*args,**kwargs))
             h.loaded(result,h.request_id)
             self.assertEqual(len(h.rows[0][1]),12)
+            h.nav=1; h.area='nav'; h.activate()
+            self.assertEqual(h.session.openWithCallback.call_args.kwargs,{'focus':'bouquets'})
+            self.assertFalse(h.pending_tv)
             h.searched('Kanał 11')
             self.assertEqual(h.current()['name'],'Kanał 11')
             self.assertEqual(sum(len(items) for _,items in h.rows),1)
@@ -194,6 +197,33 @@ class StreamingTests(unittest.TestCase):
         self.assertEqual(h['status'].text,old)
         h.loading=False; h.download_progress(h.request_id,0,None)
         self.assertEqual(h['status'].text,old)
+
+    def test_tv_opens_themed_bouquets_directly(self):
+        h=self.build(); h.channels=[channel(1,'Sport'),channel(2,'Polskie'),channel(3,'Muzyka'),channel(4,'Filmy')]
+        h.nav=1; h.activate()
+        call=h.session.openWithCallback.call_args
+        self.assertIs(call.args[1],self.ns['IPTVNavigator'])
+        self.assertEqual(call.kwargs,{'focus':'bouquets'})
+        context=call.args[2]
+        self.assertEqual([name for name,_ in context.load()],['Sport','Polskie','Muzyka'])
+        self.assertEqual(h.category,'live')
+        self.assertFalse(h.pending_tv)
+
+    def test_tv_waits_for_playlist_then_opens_without_missing_source_prompt(self):
+        h=self.build(); h.loading=True; h.nav=1; h.activate()
+        h.session.openWithCallback.assert_not_called()
+        self.assertEqual(h['hero'].text,'Wczytywanie playlisty')
+        self.assertNotIn('Dodaj playlistę',h['summary'].text)
+        h.loaded([channel(1,'Sport')],h.request_id)
+        h.session.openWithCallback.assert_called_once()
+        self.assertFalse(h.pending_tv)
+
+    def test_leaving_tv_while_loading_cancels_auto_open(self):
+        h=self.build(); h.loading=True; h.nav=1; h.activate()
+        h.move('right')
+        self.assertFalse(h.pending_tv)
+        h.loaded([channel(1,'Sport')],h.request_id)
+        h.session.openWithCallback.assert_not_called()
 
     def test_skin_bounds_all_resolutions(self):
         h=self.build()

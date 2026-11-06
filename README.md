@@ -64,7 +64,8 @@ i poziome rzędy z prawdziwej listy M3U. Dwie półki i maksymalnie dziesięć k
 są rysowane jednocześnie, niezależnie od wielkości listy.
 
 - **Start**: półki telewizji, filmów i seriali.
-- **Telewizja / Filmy / Seriale**: pozycje pogrupowane według metadanych M3U.
+- **Telewizja + OK**: bezpośrednio otwiera bukiety tematyczne TV i kanały w dwóch kolumnach.
+- **Filmy / Seriale**: pozycje pogrupowane według metadanych M3U.
 - **Moja lista**: ulubione dodawane i usuwane żółtym przyciskiem.
 - **Bukiety**: pełny widok grup playlisty i kanałów z przewijaniem stronami.
 - **Szukaj**: klawiatura ekranowa; wyszukiwanie nazw i grup w całej wczytanej liście.
@@ -272,6 +273,19 @@ zależy to od serwera, łącza i szybkości nośnika. Nie deklarujemy konkretneg
 startu na odbiorniku. Wersja sprzed tej optymalizacji nie zachowywała gotowego katalogu;
 po aktualizacji potrzebny jest jeden pełny import, aby utworzyć nową kopię.
 
+### Telewizja otwiera bukiety
+
+Wybierz zakładkę **Telewizja** i naciśnij **OK**. Od razu otworzy się widok
+bukietów telewizyjnych z licznikami po lewej i kanałami po prawej.
+Nie trzeba wchodzić najpierw w panel wskazanego kanału ani w osobną zakładkę Bukiety.
+Grupy pochodzą z metadanych aktywnej playlisty, zgodnie z filtrem kategorii TV.
+
+Jeśli trwa pobieranie lub przygotowywanie katalogu, ekran pokazuje etap oczekiwania,
+a bukiety otwierają się po zakończeniu. Przejście do innej zakładki lub ustawień
+anuluje automatyczne otwarcie, aby nie przerywać nowej czynności.
+Brak konfiguracji albo błąd źródła nie tworzy przykładowych bukietów.
+EXIT z widoku bukietów wraca do zakładki Telewizja.
+
 ## Pilot
 
 - **Strzałki**: wybór zakładki, przycisku, pozycji lub grupy.
@@ -310,6 +324,7 @@ Nie deklarujemy przetestowania na fizycznym odbiorniku.
 
 Usuwanie: usuń katalog `/usr/lib/enigma2/python/Plugins/Extensions/IPTVPL`
 i uruchom ponownie GUI.
+
 
 
 
