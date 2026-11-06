@@ -74,6 +74,9 @@ class Tests(unittest.TestCase):
             if isinstance(cls,ast.ClassDef):
                 for stmt in cls.body:
                     if isinstance(stmt,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='skin' for t in stmt.targets):
-                        ET.fromstring(ast.literal_eval(stmt.value))
+                        if isinstance(stmt.value, ast.Constant):
+                            ET.fromstring(ast.literal_eval(stmt.value))
+                        # Generated home skin is tested at HD, FHD and UHD in test_home.
 
 if __name__=='__main__': unittest.main()
+

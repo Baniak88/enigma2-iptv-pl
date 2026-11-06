@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
-from enigma import eServiceReference
+from enigma import eServiceReference, ePicLoad
 from Plugins.Plugin import PluginDescriptor
 from Screens.Screen import Screen
 from Screens.MessageBox import MessageBox
 from Screens.InfoBar import MoviePlayer
 from Components.ActionMap import ActionMap
 from Components.Label import Label
+from Components.Pixmap import Pixmap
+from Screens.VirtualKeyBoard import VirtualKeyBoard
 from Components.MenuList import MenuList
 from Components.ConfigList import ConfigListScreen
 from Components.config import (config, configfile, ConfigSubsection, ConfigText,
                                ConfigSelection, ConfigYesNo, getConfigListEntry)
 from twisted.internet.threads import deferToThread
-from .playlist import load_playlist
+from .playlist import load_playlist, load_artwork
 
 config.plugins.iptvpl = ConfigSubsection()
 settings = config.plugins.iptvpl
@@ -21,6 +23,7 @@ settings.player = ConfigSelection(default='4097', choices=[('4097', 'GStreamer (
                                   ('5002', 'ServiceApp / gstplayer (5002)')])
 
 settings.slowinternet = ConfigYesNo(default=False)
+settings.favourites = ConfigText(default='[]', fixed_size=False)
 
 
 def fit_skin(skin, fullscreen=False):
@@ -47,77 +50,451 @@ def fit_skin(skin, fullscreen=False):
     return ET.tostring(root, encoding='unicode')
 
 
+def streaming_skin():
+    # Fixed widget count keeps even very large playlists cheap to render.
+    elements = ['''<screen name="IPTVHome" position="center,center" size="1280,720" flags="wfNoBorder" backgroundColor="#00101010" title="IPTV PL">
+      <eLabel position="44,22" size="180,42" text="/ IPTV PL" font="Regular;30" foregroundColor="#00E50914" backgroundColor="#00101010" />
+      <widget name="eyebrow" position="44,103" size="690,28" font="Regular;19" foregroundColor="#00D0D0D0" backgroundColor="#00101010" />
+      <widget name="hero" position="44,141" size="760,85" font="Regular;41" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
+      <widget name="summary" position="44,233" size="760,56" font="Regular;23" foregroundColor="#00BFBFBF" backgroundColor="#00101010" />
+      <widget name="art" position="855,103" size="370,186" alphatest="blend" />
+      <widget name="actionfocus0" position="40,300" size="250,56" backgroundColor="#00E50914" />
+      <widget name="action0" position="44,304" size="242,48" font="Regular;24" halign="center" valign="center" foregroundColor="#00101010" backgroundColor="#00262626" />
+      <widget name="actionfocus1" position="302,300" size="322,56" backgroundColor="#00262626" />
+      <widget name="action1" position="306,304" size="314,48" font="Regular;23" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00303030" />
+      <widget name="status" position="650,309" size="575,40" font="Regular;19" foregroundColor="#00BFBFBF" backgroundColor="#00101010" />
+      <widget name="help" position="44,681" size="1180,30" font="Regular;18" foregroundColor="#00BFBFBF" backgroundColor="#00101010" />''']
+    nav = [('Start', 238, 80), ('Telewizja', 326, 125), ('Filmy', 459, 80),
+           ('Seriale', 547, 95), ('Moja lista', 650, 125), ('Szukaj', 943, 105), ('Ustawienia', 1060, 165)]
+    for index, (title, x, width) in enumerate(nav):
+        elements.append('<eLabel position="%d,28" size="%d,34" text="%s" font="Regular;23" halign="center" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />' % (x, width, title))
+        elements.append('<widget name="nav%d" position="%d,67" size="%d,4" backgroundColor="#00E50914" />' % (index, x, width))
+    for row, y in enumerate((382, 528)):
+        elements.append('<widget name="row%d" position="44,%d" size="1180,29" font="Regular;24" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />' % (row, y))
+        for column in range(5):
+            x = 44 + column * 238
+            name = '%d_%d' % (row, column)
+            elements.append('<widget name="frame%s" position="%d,%d" size="230,102" backgroundColor="#00262626" />' % (name, x - 4, y + 33))
+            elements.append('<widget name="card%s" position="%d,%d" size="222,94" font="Regular;23" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00262626" />' % (name, x, y + 37))
+    elements.append('</screen>')
+    return ''.join(elements)
+
+
+def channel_key(channel):
+    import hashlib
+    return hashlib.sha256(channel['url'].encode('utf-8')).hexdigest()
+
+
 class IPTVHome(Screen):
-    skin = '''<screen name="IPTVHome" position="center,center" size="1280,720" flags="wfNoBorder" backgroundColor="#00090C13" title="IPTV PL">
-      <eLabel position="56,30" size="700,40" text="IPTV PL" font="Regular;25" foregroundColor="#00FF426C" backgroundColor="#00090C13" />
-      <eLabel position="56,85" size="1168,65" text="Co oglądamy?" font="Regular;45" foregroundColor="#00FFFFFF" backgroundColor="#00090C13" />
-      <widget name="focus0" position="52,176" size="1176,168" backgroundColor="#00FFFFFF" />
-      <widget name="tile0" position="56,180" size="1168,160" font="Regular;38" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00D92061" />
-      <widget name="focus1" position="52,360" size="576,128" backgroundColor="#00FFFFFF" />
-      <widget name="tile1" position="56,364" size="568,120" font="Regular;32" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00523BCE" />
-      <widget name="focus2" position="644,360" size="584,128" backgroundColor="#00FFFFFF" />
-      <widget name="tile2" position="648,364" size="576,120" font="Regular;32" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00008FA8" />
-      <eLabel position="56,504" size="1168,30" text="ZARZĄDZANIE" font="Regular;20" foregroundColor="#00A9ADBC" backgroundColor="#00090C13" />
-      <widget name="focus3" position="52,544" size="376,88" backgroundColor="#00FFFFFF" />
-      <widget name="tile3" position="56,548" size="368,80" font="Regular;26" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00171D2C" />
-      <widget name="focus4" position="452,544" size="376,88" backgroundColor="#00FFFFFF" />
-      <widget name="tile4" position="456,548" size="368,80" font="Regular;26" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00171D2C" />
-      <widget name="focus5" position="852,544" size="376,88" backgroundColor="#00FFFFFF" />
-      <widget name="tile5" position="856,548" size="368,80" font="Regular;26" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00171D2C" />
-      <widget name="status" position="56,643" size="1168,30" font="Regular;21" foregroundColor="#00A9ADBC" backgroundColor="#00090C13" />
-      <eLabel position="56,683" size="1168,30" text="Strzałki: wybierz    OK: otwórz    EXIT: zamknij" font="Regular;20" foregroundColor="#00A9ADBC" backgroundColor="#00090C13" />
-    </screen>'''
+    skin = streaming_skin()
 
     def __init__(self, session):
         self.skin = fit_skin(type(self).skin, fullscreen=True)
         Screen.__init__(self, session)
-        self.selected = 0
-        self.titles = ['Telewizja na żywo', 'Filmy', 'Seriale',
-                       'Zmień źródło', 'Odśwież źródło', 'Ustawienia']
-        for index, title in enumerate(self.titles):
-            self['focus%d' % index] = Label('')
-            self['tile%d' % index] = Label(title)
-        self['status'] = Label('')
-        self['actions'] = ActionMap(['OkCancelActions', 'DirectionActions', 'MenuActions'],
-                                   {'ok': self.activate, 'cancel': self.close,
+        self.channels = []
+        self.rows = []
+        self.category = 'start'
+        self.query = ''
+        self.nav = 0
+        self.area = 'nav'
+        self.row = 0
+        self.column = 0
+        self.first_row = 0
+        self.action = 0
+        self.featured = None
+        self.loading = False
+        self.player_open = False
+        self.disposed = False
+        self.request_id = 0
+        self.image_request = 0
+        self.logo_url = None
+        self.logo_pending = None
+        self.logo_busy = False
+        self.logo_failed = set()
+        self.status_text = 'Dodaj własną listę M3U w ustawieniach.'
+        self.favourites = self.read_favourites()
+        for name in ('eyebrow', 'hero', 'summary', 'action0', 'action1', 'status', 'help'):
+            self[name] = Label('')
+        self['art'] = Pixmap()
+        for i in range(7):
+            self['nav%d' % i] = Label('')
+        for i in range(2):
+            self['actionfocus%d' % i] = Label('')
+            self['row%d' % i] = Label('')
+            for col in range(5):
+                self['frame%d_%d' % (i, col)] = Label('')
+                self['card%d_%d' % (i, col)] = Label('')
+        self.picload = None
+        try:
+            loader = ePicLoad()
+            loader.PictureData.get().append(self.art_decoded)
+            self.picload = loader
+        except (AttributeError, TypeError):
+            pass  # Optional artwork must never prevent the TV interface from opening.
+        self['actions'] = ActionMap(['OkCancelActions', 'DirectionActions', 'MenuActions', 'ColorActions', 'InfoActions'],
+                                   {'ok': self.activate, 'cancel': self.back,
                                     'left': lambda: self.move('left'),
                                     'right': lambda: self.move('right'),
                                     'up': lambda: self.move('up'),
                                     'down': lambda: self.move('down'),
-                                    'menu': self.setup}, -1)
-        self.onLayoutFinish.append(self.update_focus)
+                                    'menu': self.setup, 'blue': self.setup,
+                                    'green': self.reload, 'yellow': self.toggle_favourite,
+                                    'info': self.info}, -1)
+        self.onLayoutFinish.append(self.render)
+        self.onFirstExecBegin.append(self.start)
+        self.onClose.append(self.cleanup)
 
-    def update_focus(self):
-        for index in range(len(self.titles)):
-            frame = self['focus%d' % index]
-            if index == self.selected:
-                frame.show()
-            else:
-                frame.hide()
-        self['status'].setText('Wybierz, co chcesz oglądać. Źródło M3U zmienisz w ustawieniach.'
-                               if settings.source.value.strip() != '/etc/enigma2/iptv.m3u'
-                               else 'Pierwsze uruchomienie? Wybierz „Zmień źródło” i dodaj listę M3U.')
+    def read_favourites(self):
+        import json
+        try:
+            value = json.loads(settings.favourites.value)
+            return set(k for k in value if isinstance(k, str) and len(k) == 64) if isinstance(value, list) else set()
+        except (ValueError, TypeError):
+            return set()
+
+    def start(self):
+        import os
+        source = settings.source.value.strip()
+        if source.startswith(('http://', 'https://')) or (source.startswith('/') and os.path.isfile(source)):
+            self.reload()
+        else:
+            self.render()
+
+    def cleanup(self):
+        self.disposed = True
+        self.request_id += 1
+        self.image_request += 1
+        self.logo_pending = None
+        # Temporary image is local and never contains playlist URLs in its name.
+        self.remove_art_file()
+
+    def remove_art_file(self):
+        import os
+        path = getattr(self, 'art_path', None)
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            self.art_path = None
+
+    def reload(self):
+        if self.loading or self.disposed:
+            return
+        source = settings.source.value.strip()
+        if not source:
+            self.status_text = 'Niebieski: dodaj źródło M3U.'
+            self.render()
+            return
+        self.loading = True
+        self.request_id += 1
+        request = self.request_id
+        self.status_text = 'Odświeżanie listy w tle…'
+        self.render()
+        timeout = 60 if settings.slowinternet.value else 20
+        deferToThread(load_playlist, source, timeout=timeout).addCallbacks(
+            lambda channels: self.loaded(channels, request),
+            lambda failure: self.failed(failure, request))
+
+    def loaded(self, channels, request):
+        if self.disposed or request != self.request_id:
+            return
+        self.loading = False
+        self.channels = channels
+        self.logo_failed.clear()
+        self.status_text = '%d pozycji na liście' % len(channels)
+        self.rebuild_rows()
+
+    def failed(self, failure, request):
+        if self.disposed or request != self.request_id:
+            return
+        self.loading = False
+        self.status_text = 'Błąd źródła. Niebieski: ustawienia • Zielony: ponów'
+        self.render()
+
+    def rebuild_rows(self):
+        channels = self.channels
+        if self.query:
+            text = self.query.casefold()
+            channels = [c for c in channels if text in c['name'].casefold() or text in c['group'].casefold()]
+        if self.category == 'favourites':
+            channels = [c for c in channels if channel_key(c) in self.favourites]
+        elif self.category in ('live', 'movies', 'series'):
+            channels = [c for c in channels if channel_category(c) == self.category]
+        rows = []
+        if self.category == 'start' and not self.query:
+            for key, title in [('live', 'Telewizja na żywo'), ('movies', 'Filmy'), ('series', 'Seriale')]:
+                subset = [c for c in channels if channel_category(c) == key]
+                if subset:
+                    rows.append((title, subset))
+        else:
+            # Preserve provider ordering; each group becomes a horizontally scrollable shelf.
+            groups = {}
+            for channel in channels:
+                groups.setdefault(channel['group'], []).append(channel)
+            rows = list(groups.items())
+        self.rows = rows
+        if not rows and self.area == 'shelf':
+            self.area = 'hero'
+        self.row = self.column = self.first_row = 0
+        self.featured = rows[0][1][0] if rows else None
+        self.render()
+
+    def current(self):
+        if self.rows and self.area == 'shelf':
+            return self.rows[self.row][1][self.column]
+        return self.featured
 
     def move(self, direction):
-        neighbours = {'left': [0, 1, 1, 3, 3, 4],
-                      'right': [0, 2, 2, 4, 5, 5],
-                      'up': [0, 0, 0, 1, 1, 2],
-                      'down': [1, 3, 5, 3, 4, 5]}
-        self.selected = neighbours[direction][self.selected]
-        self.update_focus()
+        if self.area == 'shelf' and not self.rows:
+            self.area = 'hero'
+        if self.area == 'nav':
+            if direction in ('left', 'right'):
+                self.nav = max(0, min(6, self.nav + (-1 if direction == 'left' else 1)))
+            elif direction == 'down':
+                self.area = 'hero'
+        elif self.area == 'hero':
+            if direction == 'up':
+                self.area = 'nav'
+            elif direction == 'down' and self.rows:
+                self.area = 'shelf'
+            elif direction in ('left', 'right'):
+                self.action = 0 if direction == 'left' else 1
+        else:
+            if direction in ('left', 'right'):
+                self.column = max(0, min(len(self.rows[self.row][1]) - 1,
+                                        self.column + (-1 if direction == 'left' else 1)))
+            elif direction == 'up':
+                if self.row == 0:
+                    self.area = 'hero'
+                else:
+                    self.row -= 1
+                    self.column = min(self.column, len(self.rows[self.row][1]) - 1)
+            elif direction == 'down' and self.row + 1 < len(self.rows):
+                self.row += 1
+                self.column = min(self.column, len(self.rows[self.row][1]) - 1)
+            if self.area == 'shelf':
+                self.featured = self.current()
+                self.first_row = min(self.first_row, self.row)
+                if self.row >= self.first_row + 2:
+                    self.first_row = self.row - 1
+        self.render()
+
+    def render(self):
+        if self.disposed:
+            return
+        for i in range(7):
+            self['nav%d' % i].show() if self.nav == i else self['nav%d' % i].hide()
+        for i in range(2):
+            self['actionfocus%d' % i].show() if self.area == 'hero' and self.action == i else self['actionfocus%d' % i].hide()
+        selected = self.current()
+        if selected:
+            self.featured = selected
+            self['eyebrow'].setText('TELEWIZJA NA ŻYWO' if channel_category(selected) == 'live' else 'Z TWOJEJ LISTY M3U')
+            self['hero'].setText(selected['name'])
+            saved = ' • W mojej liście' if channel_key(selected) in self.favourites else ''
+            self['summary'].setText('%s%s' % (selected['group'], saved))
+            self['action0'].setText('Odtwórz')
+            self['action1'].setText('Więcej informacji')
+        else:
+            self['eyebrow'].setText('TWOJA TELEWIZJA. TWÓJ WYBÓR.')
+            self['hero'].setText('Co oglądamy?')
+            self['summary'].setText('Brak wyników wyszukiwania.' if self.query else 'Brak pozycji. Wybierz inną kategorię lub dodaj źródło M3U.')
+            self['action0'].setText('Zmień źródło')
+            self['action1'].setText('Ustawienia')
+        self['status'].setText(self.status_text)
+        self['help'].setText('Strzałki: wybierz  OK: otwórz  Zielony: odśwież  Żółty: moja lista  Niebieski: ustawienia  EXIT: wróć')
+        for slot in range(2):
+            row_index = self.first_row + slot
+            row = self.rows[row_index] if row_index < len(self.rows) else None
+            self['row%d' % slot].setText(row[0] if row else '')
+            offset = (self.column // 5) * 5 if row_index == self.row else 0
+            if row:
+                self['row%d' % slot].setText('%s   %d–%d / %d' % (row[0], offset + 1, min(offset + 5, len(row[1])), len(row[1])))
+            for col in range(5):
+                widget = self['card%d_%d' % (slot, col)]
+                frame = self['frame%d_%d' % (slot, col)]
+                index = offset + col
+                if row and index < len(row[1]):
+                    channel = row[1][index]
+                    widget.setText(channel['name'])
+                    widget.show()
+                    if self.area == 'shelf' and row_index == self.row and index == self.column:
+                        frame.show()
+                    else:
+                        frame.hide()
+                else:
+                    widget.hide()
+                    frame.hide()
+        self.update_art(selected)
+
+    def activate(self):
+        if self.area == 'nav':
+            if self.nav == 5:
+                self.session.openWithCallback(self.searched, VirtualKeyBoard, title='Szukaj na swojej liście', text=self.query)
+            elif self.nav == 6:
+                self.setup()
+            else:
+                self.category = ('start', 'live', 'movies', 'series', 'favourites')[self.nav]
+                self.query = ''
+                self.rebuild_rows()
+                self.area = 'hero'
+                self.render()
+        elif self.area == 'hero' and self.action == 1:
+            self.info() if self.current() else self.setup()
+        else:
+            self.play() if self.current() else self.setup()
+
+    def searched(self, text):
+        if text is not None:
+            self.query = text.strip()
+            self.category = 'start'
+            self.rebuild_rows()
+            self.area = 'shelf' if self.rows else 'hero'
+            self.render()
+
+    def info(self):
+        channel = self.current()
+        if channel:
+            text = '%s\n\nGrupa: %s\n\nBrak dodatkowego opisu.' % (channel['name'], channel['group'])
+            self.session.open(MessageBox, text, MessageBox.TYPE_INFO)
+
+    def toggle_favourite(self):
+        import json
+        channel = self.current()
+        if not channel:
+            return
+        key = channel_key(channel)
+        if key in self.favourites:
+            self.favourites.remove(key)
+        elif len(self.favourites) < 2000:
+            self.favourites.add(key)
+        else:
+            self.status_text = 'Moja lista: osiągnięto limit 2000 pozycji.'
+            self.render()
+            return
+        settings.favourites.value = json.dumps(sorted(self.favourites))
+        settings.favourites.save()
+        configfile.save()
+        if self.category == 'favourites':
+            self.rebuild_rows()
+            if not self.rows:
+                self.area = 'hero'
+        self.render()
+
+    def back(self):
+        if self.area != 'nav':
+            self.area = 'nav'
+            self.render()
+        elif self.category != 'start' or self.query:
+            self.nav = 0
+            self.category = 'start'
+            self.query = ''
+            self.rebuild_rows()
+        else:
+            self.close()
 
     def setup(self):
         self.session.openWithCallback(self.settings_closed, IPTVSettings)
 
     def settings_closed(self, saved):
-        self.update_focus()
-
-    def activate(self):
-        if self.selected in (3, 5):
-            self.setup()
+        if saved:
+            # Ignore callbacks from a previous source after a configuration change.
+            self.request_id += 1
+            self.loading = False
+            self.channels = []
+            self.rows = []
+            self.area = 'hero'
+            self.featured = None
+            self.logo_failed.clear()
+            self.reload()
         else:
-            category = {0: 'live', 1: 'movies', 2: 'series', 4: 'all'}[self.selected]
-            self.session.open(IPTVBrowser, category=category)
+            self.render()
+
+    def play(self):
+        channel = self.current()
+        if self.player_open or self.disposed or not channel:
+            return
+        service_type = 4097 if settings.slowinternet.value else int(settings.player.value)
+        reference = eServiceReference(service_type, 0, channel['url'])
+        if settings.slowinternet.value:
+            reference.setData(7, 1)
+        reference.setName(channel['name'])
+        self.player_open = True
+        try:
+            self.session.openWithCallback(self.player_closed, MoviePlayer, reference)
+        except Exception:
+            self.player_open = False
+            self.status_text = 'Nie udało się uruchomić odtwarzacza. Niebieski: ustawienia'
+            self.render()
+
+    def player_closed(self, *args):
+        self.player_open = False
+        self.render()
+
+    def update_art(self, selected):
+        url = selected.get('logo', '') if selected and self.picload is not None and not settings.slowinternet.value else ''
+        if url == self.logo_url:
+            return
+        self.logo_url = url
+        self.image_request += 1
+        self['art'].hide()
+        self.logo_pending = (url, self.image_request) if url and url not in self.logo_failed else None
+        self.fetch_next_art()
+
+    def fetch_next_art(self):
+        if self.logo_busy or self.disposed or not self.logo_pending:
+            return
+        url, request = self.logo_pending
+        self.logo_pending = None
+        self.logo_busy = True
+        deferToThread(load_artwork, url).addCallbacks(
+            lambda path: self.art_downloaded(path, url, request),
+            lambda failure: self.art_failed(failure, url))
+
+    def art_downloaded(self, path, url, request):
+        import os
+        if self.disposed or request != self.image_request:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            self.logo_busy = False
+            self.fetch_next_art()
+            return
+        self.remove_art_file()
+        self.art_path = path
+        self.decoding_request = request
+        try:
+            size = self['art'].instance.size()
+            self.picload.setPara((size.width(), size.height(), 1, 1, False, 1, '#00101010'))
+            result = self.picload.startDecode(path)
+            if result:
+                self.art_failed(None, url)
+        except Exception:
+            self.art_failed(None, url)
+
+    def art_decoded(self, *args):
+        try:
+            if not self.disposed and self.decoding_request == self.image_request:
+                data = self.picload.getData()
+                if data:
+                    pixmap = data.__deref__() if hasattr(data, '__deref__') else data
+                    self['art'].instance.setPixmap(pixmap)
+                    self['art'].show()
+        except Exception:
+            if not self.disposed:
+                self['art'].hide()
+        finally:
+            self.remove_art_file()
+            self.logo_busy = False
+            self.fetch_next_art()
+
+    def art_failed(self, failure, url):
+        self.logo_failed.add(url)
+        self.remove_art_file()
+        self.logo_busy = False
+        self.fetch_next_art()
 
 
 def channel_category(channel):
@@ -131,13 +508,13 @@ def channel_category(channel):
 
 
 class IPTVSettings(Screen, ConfigListScreen):
-    skin = '''<screen name="IPTVSettings" position="center,center" size="1100,620" flags="wfNoBorder" backgroundColor="#00F2F2F7" title="Ustawienia">
-      <eLabel position="35,25" size="1030,55" text="Ustawienia" font="Regular;40" foregroundColor="#001C1C1E" backgroundColor="#00F2F2F7" />
-      <eLabel position="35,95" size="1030,40" text="TWOJA TELEWIZJA" font="Regular;21" foregroundColor="#00636366" backgroundColor="#00F2F2F7" />
-      <widget name="config" position="35,145" size="1030,210" itemHeight="65" font="Regular;26" foregroundColor="#001C1C1E" backgroundColor="#00FFFFFF" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00007AFF" scrollbarMode="showOnDemand" />
+    skin = '''<screen name="IPTVSettings" position="center,center" size="1100,620" flags="wfNoBorder" backgroundColor="#00101010" title="Ustawienia">
+      <eLabel position="35,25" size="1030,55" text="Ustawienia" font="Regular;40" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
+      <eLabel position="35,95" size="1030,40" text="TWOJA TELEWIZJA" font="Regular;21" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
+      <widget name="config" position="35,145" size="1030,210" itemHeight="65" font="Regular;26" foregroundColor="#00FFFFFF" backgroundColor="#00262626" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00E50914" scrollbarMode="showOnDemand" />
       <eLabel position="35,360" size="1030,105" text="Wpisz adres listy M3U lub ścieżkę pliku.
-Wolny internet: buforowanie GStreamer i dłuższe oczekiwanie na listę." font="Regular;24" foregroundColor="#00636366" backgroundColor="#00F2F2F7" />
-      <widget name="help" position="35,515" size="1030,75" font="Regular;23" foregroundColor="#00007AFF" backgroundColor="#00F2F2F7" />
+Wolny internet: buforowanie GStreamer i dłuższe oczekiwanie na listę." font="Regular;24" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
+      <widget name="help" position="35,515" size="1030,75" font="Regular;23" foregroundColor="#00E50914" backgroundColor="#00101010" />
     </screen>'''
 
     def __init__(self, session):
@@ -162,10 +539,10 @@ Wolny internet: buforowanie GStreamer i dłuższe oczekiwanie na listę." font="
 
 
 class IPTVGroups(Screen):
-    skin = '''<screen name="IPTVGroups" position="center,center" size="760,580" flags="wfNoBorder" backgroundColor="#00F2F2F7" title="Grupy">
-      <eLabel position="30,25" size="700,60" text="Grupy kanałów" font="Regular;38" foregroundColor="#001C1C1E" backgroundColor="#00F2F2F7" />
-      <widget name="groups" font="Regular;27" itemHeight="60" position="30,110" size="700,360" foregroundColor="#001C1C1E" backgroundColor="#00FFFFFF" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00007AFF" scrollbarMode="showOnDemand" />
-      <eLabel position="30,505" size="700,45" text="OK  Wybierz     EXIT  Wróć" font="Regular;24" foregroundColor="#00007AFF" backgroundColor="#00F2F2F7" />
+    skin = '''<screen name="IPTVGroups" position="center,center" size="760,580" flags="wfNoBorder" backgroundColor="#00101010" title="Grupy">
+      <eLabel position="30,25" size="700,60" text="Grupy kanałów" font="Regular;38" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
+      <widget name="groups" font="Regular;27" itemHeight="60" position="30,110" size="700,360" foregroundColor="#00FFFFFF" backgroundColor="#00262626" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00E50914" scrollbarMode="showOnDemand" />
+      <eLabel position="30,505" size="700,45" text="OK  Wybierz     EXIT  Wróć" font="Regular;24" foregroundColor="#00E50914" backgroundColor="#00101010" />
     </screen>'''
 
     def __init__(self, session, choices):
@@ -180,16 +557,16 @@ class IPTVGroups(Screen):
 
 
 class IPTVBrowser(Screen):
-    skin = '''<screen name="IPTVBrowser" position="center,center" size="1100,620" flags="wfNoBorder" backgroundColor="#00F2F2F7" title="IPTV PL">
-      <eLabel position="35,25" size="700,55" text="Telewizja" font="Regular;42" foregroundColor="#001C1C1E" backgroundColor="#00F2F2F7" />
-      <eLabel position="840,35" size="225,40" text="IPTV PL" halign="right" font="Regular;24" foregroundColor="#00007AFF" backgroundColor="#00F2F2F7" />
-      <widget name="status" position="35,90" size="1030,40" font="Regular;23" foregroundColor="#00636366" backgroundColor="#00F2F2F7" />
-      <widget name="channels" font="Regular;27" itemHeight="60" position="35,145" size="650,360" foregroundColor="#001C1C1E" backgroundColor="#00FFFFFF" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00007AFF" scrollbarMode="showOnDemand" />
-      <eLabel position="715,145" size="350,360" backgroundColor="#00FFFFFF" />
-      <eLabel position="740,170" size="300,35" text="WYBRANY KANAŁ" font="Regular;19" foregroundColor="#00636366" backgroundColor="#00FFFFFF" />
-      <widget name="selection" position="740,225" size="300,140" font="Regular;29" foregroundColor="#001C1C1E" backgroundColor="#00FFFFFF" />
-      <widget name="detail" position="740,380" size="300,100" font="Regular;23" foregroundColor="#00007AFF" backgroundColor="#00FFFFFF" />
-      <widget name="help" position="35,535" size="1030,65" font="Regular;22" foregroundColor="#00636366" backgroundColor="#00F2F2F7" />
+    skin = '''<screen name="IPTVBrowser" position="center,center" size="1100,620" flags="wfNoBorder" backgroundColor="#00101010" title="IPTV PL">
+      <eLabel position="35,25" size="700,55" text="Telewizja" font="Regular;42" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
+      <eLabel position="840,35" size="225,40" text="IPTV PL" halign="right" font="Regular;24" foregroundColor="#00E50914" backgroundColor="#00101010" />
+      <widget name="status" position="35,90" size="1030,40" font="Regular;23" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
+      <widget name="channels" font="Regular;27" itemHeight="60" position="35,145" size="650,360" foregroundColor="#00FFFFFF" backgroundColor="#00262626" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00E50914" scrollbarMode="showOnDemand" />
+      <eLabel position="715,145" size="350,360" backgroundColor="#00262626" />
+      <eLabel position="740,170" size="300,35" text="WYBRANY KANAŁ" font="Regular;19" foregroundColor="#00BBBBBB" backgroundColor="#00262626" />
+      <widget name="selection" position="740,225" size="300,140" font="Regular;29" foregroundColor="#00FFFFFF" backgroundColor="#00262626" />
+      <widget name="detail" position="740,380" size="300,100" font="Regular;23" foregroundColor="#00E50914" backgroundColor="#00262626" />
+      <widget name="help" position="35,535" size="1030,65" font="Regular;22" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
     </screen>'''
 
     def __init__(self, session, category='all'):
@@ -309,3 +686,4 @@ def main(session, **kwargs):
 def Plugins(**kwargs):
     return [PluginDescriptor(name='IPTV PL', description='Odtwarzacz list IPTV M3U',
                              where=PluginDescriptor.WHERE_PLUGINMENU, fnc=main)]
+

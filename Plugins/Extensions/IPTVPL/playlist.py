@@ -31,6 +31,11 @@ def parse_m3u(text, base=''):
                 name, attrs = pending or ('', {})
                 channels.append({'name': name or attrs.get('tvg-name') or 'Kanał %d' % (len(channels) + 1),
                                  'url': url, 'group': group or 'Pozostałe'})
+                logo = attrs.get('tvg-logo', '').strip()
+                if logo:
+                    logo = urljoin(base, logo) if base else logo
+                    if urlsplit(logo).scheme.lower() in ('http', 'https'):
+                        channels[-1]['logo'] = logo
             pending = None
             group = ''
     return channels
@@ -55,3 +60,27 @@ def load_playlist(source, timeout=20):
     if not channels:
         raise ValueError('Lista nie zawiera obsługiwanych adresów kanałów.')
     return channels
+
+
+def load_artwork(url):
+    """Fetch a single small artwork file in a worker; the caller owns its lifetime."""
+    import os
+    import tempfile
+    if urlsplit(url).scheme.lower() not in ('http', 'https'):
+        raise ValueError('Unsupported artwork URL')
+    request = Request(url, headers={'User-Agent': 'Enigma2-IPTVPL/1.0'})
+    with urlopen(request, timeout=5) as response:
+        data = response.read(512 * 1024 + 1)
+    if len(data) > 512 * 1024 or not (data.startswith(b'\x89PNG\r\n\x1a\n') or data.startswith(b'\xff\xd8\xff')):
+        raise ValueError('Unsupported or oversized artwork')
+    path = None
+    try:
+        with tempfile.NamedTemporaryFile(prefix='iptvpl-art-', suffix='.img', delete=False) as handle:
+            path = handle.name
+            handle.write(data)
+        return path
+    except Exception:
+        if path:
+            os.unlink(path)
+        raise
+

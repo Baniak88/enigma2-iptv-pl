@@ -59,31 +59,51 @@ Fizyczny odbiornik wymaga osobnego sprawdzenia.
 
 ## Ekran startowy
 
-Po uruchomieniu otwiera się pełnoekranowy, ciemny pulpit **Co oglądamy?**.
-Strzałki wybierają kafelek, OK go otwiera, EXIT zamyka wtyczkę.
-Biała ramka oznacza zaznaczony kafelek.
+Pełnoekranowy, ciemny interfejs ma górne menu, duży panel wskazanej pozycji
+i poziome rzędy z prawdziwej listy M3U. Dwie półki i maksymalnie dziesięć kart
+są rysowane jednocześnie, niezależnie od wielkości listy.
 
-- **Telewizja na żywo**: pozycje M3U spoza grup filmów i seriali.
-- **Filmy**: grupy zawierające film, movie, vod lub kino.
-- **Seriale**: grupy zawierające serial, series, sezon lub season (mają pierwszeństwo nad filmami).
-- **Zmień źródło / Ustawienia**: otwiera konfigurację listy i odtwarzania.
-- **Odśwież źródło**: otwiera wszystkie pozycje i pobiera listę na nowo.
+- **Start**: półki telewizji, filmów i seriali.
+- **Telewizja / Filmy / Seriale**: pozycje pogrupowane według metadanych M3U.
+- **Moja lista**: ulubione dodawane i usuwane żółtym przyciskiem.
+- **Szukaj**: klawiatura ekranowa; wyszukiwanie nazw i grup w całej wczytanej liście.
+- **Ustawienia / MENU / niebieski**: zmiana źródła, odtwarzacza i trybu wolnego internetu.
 
-Pulpit nie wykonuje połączenia sieciowego przy starcie.
-Listy są wczytywane po wejściu w kategorię. Błąd źródła jest pokazywany w ekranie listy,
-bez okna modalnego; niebieski otwiera ustawienia, zielony ponawia próbę.
-Kategorie korzystają wyłącznie z metadanych M3U, nie dodają katalogu VOD ani Xtream API.
-Układ skaluje się do rozdzielczości GUI Enigma2 (niezależnie od rozdzielczości sygnału wideo).
-Brak listy lub odpowiednich grup oznacza pustą kategorię.
+Strzałki poruszają zaznaczenie w górnym menu, przyciskach panelu i rzędach.
+OK na pozycji odtwarza ją, na górnej zakładce otwiera kategorię.
+W rzędach przewijanie w prawo pokazuje kolejne pozycje; w dół — kolejne grupy.
+EXIT wraca do menu, potem do Start, a następnie zamyka wtyczkę.
+Biała ramka oznacza wskazaną kartę, czerwony akcent wybraną zakładkę.
+
+Przy skonfigurowanym źródle lista wczytuje się w tle po otwarciu ekranu.
+Bez istniejącego pliku lub adresu źródła pokazuje się ekran konfiguracji początkowej,
+bez okna błędu. Nieudane odświeżenie zachowuje już wczytaną listę.
+Po zapisaniu zmienionego źródła poprzednia lista jest usuwana z ekranu.
+
+**Grafiki i opisy:** ekran korzysta z nazw, grup oraz opcjonalnego `tvg-logo`.
+Grafika wskazanej pozycji jest pobierana pojedynczo w tle (PNG/JPEG, do 512 KiB,
+limit odczytu 5 sekund), a plik tymczasowy jest usuwany po dekodowaniu.
+Wolny internet wyłącza pobieranie grafik. Brak grafiki oznacza kartę z nazwą.
+Nie ma fikcyjnych plakatów, roczników, ocen ani opisów filmów z wizualizacji.
+Nie dodaje to dostępu do katalogu Netflix ani Xtream API.
+
+Kategorie: nazwy grup zawierające serial/series/sezon/season trafiają do seriali,
+film/movie/vod/kino do filmów, pozostałe do telewizji.
+Moja lista zapisuje skróty adresów pozycji w ustawieniach — bez dodatkowych kopii URL.
+Zmiana adresu strumienia w źródle może wymagać ponownego dodania go do ulubionych.
+
+Układ skaluje się do rozdzielczości GUI Enigma2. Rzeczywisty wygląd zależy
+od czcionek i możliwości obrazu dekodera; nie jest identyczny z wizualizacją.
 
 ## Pilot
 
-- **OK**: odtwarzanie zaznaczonego kanału w systemowym MoviePlayer.
-- **EXIT podczas odtwarzania**: powrót do listy; przywracanie poprzedniej usługi obsługuje MoviePlayer obrazu.
+- **Strzałki**: wybór zakładki, przycisku, pozycji lub grupy.
+- **OK**: otwarcie zakładki albo odtworzenie pozycji.
+- **EXIT**: powrót; w odtwarzaczu powrót do interfejsu obsługuje MoviePlayer obrazu.
 - **Zielony**: ponowne wczytanie listy.
-- **Żółty**: wybór grupy kanałów.
-- **Niebieski / MENU**: ustawienia; OK na polu tekstowym otwiera edycję dostępną w obrazie.
-- **EXIT na liście**: zamknięcie wtyczki.
+- **Żółty**: dodanie/usunięcie wskazanej pozycji z Mojej listy.
+- **Niebieski / MENU**: ustawienia źródła i odtwarzania.
+- **INFO**: nazwa i grupa wskazanej pozycji.
 
 Przykład listy (adres demonstracyjny, zastąp go działającym strumieniem):
 
@@ -94,7 +114,7 @@ https://example.com/live/index.m3u8
 ```
 
 Listy powinny mieć kodowanie UTF-8. Limit pobieranego pliku wynosi 8 MiB,
-a limit czasu operacji sieciowej 20 sekund. Wtyczka nie dostarcza kanałów ani kont.
+a limit odczytu listy 20 sekund (60 w trybie wolnego internetu). Wtyczka nie dostarcza kanałów ani kont.
 Adres listy jest zapisany w ustawieniach Enigma2; jeśli zawiera hasło, chroń kopie tych ustawień.
 Brak obsługi DRM, Xtream API, EPG i dodatkowych nagłówków z dyrektyw VLC/Kodi.
 
@@ -113,3 +133,4 @@ Nie deklarujemy przetestowania na fizycznym odbiorniku.
 
 Usuwanie: usuń katalog `/usr/lib/enigma2/python/Plugins/Extensions/IPTVPL`
 i uruchom ponownie GUI.
+
