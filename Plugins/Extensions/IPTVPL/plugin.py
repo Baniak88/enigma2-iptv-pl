@@ -346,7 +346,7 @@ class IPTVHome(Screen):
         else:
             self.play() if self.current() else self.playlists()
 
-    def searched(self, text):
+    def searched(self, text=None):
         if text is not None:
             self.query = text.strip()
             self.category = 'start'
@@ -398,7 +398,7 @@ class IPTVHome(Screen):
     def playlists(self):
         self.session.openWithCallback(self.playlist_selected, IPTVPlaylistSources)
 
-    def playlist_selected(self, source):
+    def playlist_selected(self, source=None):
         if source and not self.disposed:
             settings.source.value = source
             settings.source.save()
@@ -411,7 +411,7 @@ class IPTVHome(Screen):
     def setup(self):
         self.session.openWithCallback(self.settings_closed, IPTVSettings)
 
-    def settings_closed(self, saved):
+    def settings_closed(self, saved=False):
         if saved:
             # Ignore callbacks from a previous source after a configuration change.
             self.request_id += 1
@@ -562,11 +562,11 @@ class IPTVPlaylistSources(Screen):
         else:
             self.close(selected[2])
 
-    def selected(self, path):
+    def selected(self, path=None):
         if path and not self.disposed:
             self.close(path)
 
-    def url_selected(self, value):
+    def url_selected(self, value=None):
         if value is None:
             return
         try:
@@ -576,7 +576,7 @@ class IPTVPlaylistSources(Screen):
             return
         self.close(source)
 
-    def file_selected(self, path):
+    def file_selected(self, path=None):
         if not path or self.disposed:
             return
         self.busy = True
@@ -714,7 +714,7 @@ Wolny internet: buforowanie GStreamer i dłuższe oczekiwanie na listę." font="
     def playlists(self):
         self.session.openWithCallback(self.playlist_selected, IPTVPlaylistSources)
 
-    def playlist_selected(self, source):
+    def playlist_selected(self, source=None):
         if source:
             settings.source.value = source
             self['config'].invalidateCurrent()
@@ -831,7 +831,7 @@ class IPTVBrowser(Screen):
         choices = [('Wszystkie', None)] + [(g, g) for g in sorted(set(c['group'] for c in self.channels))]
         self.session.openWithCallback(self.selected_group, IPTVGroups, choices)
 
-    def selected_group(self, choice):
+    def selected_group(self, choice=None):
         if choice:
             self.group = choice[1]
             self.render()
@@ -840,7 +840,7 @@ class IPTVBrowser(Screen):
         if not self.loading:
             self.session.openWithCallback(self.settings_closed, IPTVSettings)
 
-    def settings_closed(self, saved):
+    def settings_closed(self, saved=False):
         if saved:
             self.reload()
 
