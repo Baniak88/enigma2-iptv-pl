@@ -53,10 +53,10 @@ class LargeTests(unittest.TestCase):
             self.assertEqual(os.listdir(d),[])
 
     def test_mobile_limit_matches_backend(self):
-        self.assertEqual(playlist.MAX_BYTES,64*1024*1024)
+        self.assertEqual(playlist.MAX_BYTES,512*1024*1024)
         self.assertEqual(sources.MAX_BYTES,playlist.MAX_BYTES)
-        self.assertIn('67108864',sources.PAGE)
+        self.assertIn('536870912',sources.PAGE)
         self.assertNotIn('8 MiB',sources.PAGE)
-        self.assertIn('64 MiB',playlist.playlist_error_message(playlist.PlaylistLimitError('Lista przekracza limit 64 MiB.')))
+        self.assertIn('512 MiB',playlist.playlist_error_message(playlist.PlaylistLimitError('Lista przekracza limit 512 MiB.')))
 
 if __name__=='__main__': unittest.main()

@@ -12,7 +12,7 @@ from Components.ConfigList import ConfigListScreen
 from Components.config import (config, configfile, ConfigSubsection, ConfigText,
                                ConfigSelection, ConfigYesNo, getConfigListEntry)
 from twisted.internet.threads import deferToThread
-from .playlist import load_playlist, load_artwork, take_playlist_preview, playlist_error_message
+from .playlist import load_playlist, load_artwork, take_playlist_preview, playlist_error_message, discard_playlist
 from .sources import PlaylistUpload, saved_playlists, import_local_playlist, validate_playlist_url
 
 config.plugins.iptvpl = ConfigSubsection()
@@ -270,6 +270,7 @@ class IPTVHome(Screen):
         self.player_open = False
         self.disposed = False
         self.request_id = 0
+        self.row_request = 0
         self.image_request = 0
         self.logo_url = None
         self.logo_pending = None
@@ -327,6 +328,11 @@ class IPTVHome(Screen):
     def cleanup(self):
         self.disposed = True
         self.request_id += 1
+        self.row_request += 1
+        discard_playlist(self.channels)
+        self.channels = []
+        self.rows = []
+        self.featured = None
         self.image_request += 1
         self.logo_pending = None
         # Temporary image is local and never contains playlist URLs in its name.
@@ -366,8 +372,11 @@ class IPTVHome(Screen):
 
     def loaded(self, channels, request):
         if self.disposed or request != self.request_id:
+            discard_playlist(channels)
             return
         self.loading = False
+        if self.channels is not channels:
+            discard_playlist(self.channels)
         self.channels = channels
         self.logo_failed.clear()
         self.status_text = '%d pozycji na liście' % len(channels)
@@ -384,6 +393,21 @@ class IPTVHome(Screen):
             self['summary'].setText(self.status_text)
 
     def rebuild_rows(self):
+        self.row_request += 1
+        if getattr(self.channels, 'is_disk_catalogue', False):
+            token = self.row_request
+            self.rows = []
+            self.featured = None
+            self.row = self.column = self.first_row = 0
+            if self.area == 'shelf':
+                self.area = 'hero'
+            self.status_text = 'Przygotowywanie katalogu…'
+            self.render()
+            deferToThread(self.channels.build_rows, self.category, self.query,
+                          frozenset(self.favourites)).addCallbacks(
+                lambda rows: self.catalogue_rows_ready(rows, token),
+                lambda error: self.catalogue_rows_failed(error, token))
+            return
         channels = self.channels
         if self.query:
             text = self.query.casefold()
@@ -409,6 +433,21 @@ class IPTVHome(Screen):
             self.area = 'hero'
         self.row = self.column = self.first_row = 0
         self.featured = rows[0][1][0] if rows else None
+        self.render()
+
+    def catalogue_rows_ready(self, rows, token):
+        if self.disposed or token != self.row_request:
+            return
+        self.rows = rows
+        self.row = self.column = self.first_row = 0
+        self.featured = rows[0][1][0] if rows else None
+        self.status_text = '%d pozycji • katalog na dysku' % sum(len(items) for _, items in rows)
+        self.render()
+
+    def catalogue_rows_failed(self, failure, token):
+        if self.disposed or token != self.row_request:
+            return
+        self.status_text = playlist_error_message(getattr(failure, 'value', failure))
         self.render()
 
     def current(self):
@@ -586,6 +625,8 @@ class IPTVHome(Screen):
             # Ignore callbacks from a previous source after a configuration change.
             self.request_id += 1
             self.loading = False
+            self.row_request += 1
+            discard_playlist(self.channels)
             self.channels = []
             self.rows = []
             self.area = 'hero'
@@ -766,7 +807,7 @@ class IPTVPlaylistSources(Screen):
     def import_failed(self, failure):
         self.busy = False
         if not self.disposed:
-            self['status'].setText('Nie udało się dodać pliku. Wybierz listę M3U do 64 MiB zawierającą adresy kanałów.')
+            self['status'].setText('Nie udało się dodać pliku. Wybierz listę M3U do 512 MiB zawierającą adresy kanałów.')
 
 
 class IPTVPlaylistFile(Screen):
@@ -1116,6 +1157,7 @@ def main(session, **kwargs):
 def Plugins(**kwargs):
     return [PluginDescriptor(name='IPTV PL', description='Odtwarzacz list IPTV M3U',
                              where=PluginDescriptor.WHERE_PLUGINMENU, fnc=main)]
+
 
 
 

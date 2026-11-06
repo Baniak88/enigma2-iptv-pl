@@ -5,9 +5,9 @@ import time
 from urllib.parse import urljoin, urlsplit
 from urllib.request import Request, urlopen
 
-MAX_BYTES = 64 * 1024 * 1024
+MAX_BYTES = 512 * 1024 * 1024
 MAX_LINE_BYTES = 1024 * 1024
-MAX_CHANNELS = 200000
+MAX_CHANNELS = 2000000
 
 
 class PlaylistLimitError(ValueError):
@@ -46,7 +46,7 @@ def iter_m3u(lines, base=''):
                 name, attrs = pending or ('', {})
                 count += 1
                 if count > MAX_CHANNELS:
-                    raise PlaylistLimitError('Lista przekracza limit 200000 pozycji. Podziel ją u dostawcy.')
+                    raise PlaylistLimitError('Lista przekracza limit 2000000 pozycji. Podziel ją u dostawcy.')
                 channel = {'name': name or attrs.get('tvg-name') or 'Kanał %d' % count,
                            'url': url, 'group': group or 'Pozostałe'}
                 logo = attrs.get('tvg-logo', '').strip()
@@ -72,7 +72,7 @@ def playlist_lines(handle, progress=None, total=None):
     received = 0
     pending = b''
     if total is not None and total > MAX_BYTES:
-        raise PlaylistLimitError('Lista przekracza limit 64 MiB.')
+        raise PlaylistLimitError('Lista przekracza limit 512 MiB.')
     if progress:
         progress(0, total)
     while True:
@@ -81,7 +81,7 @@ def playlist_lines(handle, progress=None, total=None):
             break
         received += len(chunk)
         if received > MAX_BYTES:
-            raise PlaylistLimitError('Lista przekracza limit 64 MiB.')
+            raise PlaylistLimitError('Lista przekracza limit 512 MiB.')
         if progress:
             progress(received, total)
         lines = (pending + chunk).split(b'\n')
@@ -105,24 +105,34 @@ def count_playlist_file(path):
 
 
 def load_playlist(source, timeout=20, progress=None):
+    from .catalogue import CatalogueBuilder
+    builder = CatalogueBuilder()
     source = source.strip()
-    if source.lower().startswith(('http://', 'https://')):
-        request = Request(source, headers={'User-Agent': 'Enigma2-IPTVPL/1.0'})
-        with urlopen(request, timeout=timeout) as response:
-            header = response.headers.get('Content-Length') if hasattr(response, 'headers') else None
-            try:
-                total = int(header) if header else None
-            except (TypeError, ValueError):
-                total = None
-            channels = list(iter_m3u(playlist_lines(response, progress, total), response.geturl()))
-    else:
-        if not source.startswith('/'):
-            raise ValueError('Podaj pełną ścieżkę pliku albo adres HTTP/HTTPS.')
-        with open(source, 'rb') as handle:
-            channels = list(iter_m3u(playlist_lines(handle, progress)))
-    if not channels:
-        raise ValueError('Lista nie zawiera obsługiwanych adresów kanałów.')
-    return channels
+    try:
+        if source.lower().startswith(('http://', 'https://')):
+            request = Request(source, headers={'User-Agent': 'Enigma2-IPTVPL/1.0'})
+            with urlopen(request, timeout=timeout) as response:
+                header = response.headers.get('Content-Length') if hasattr(response, 'headers') else None
+                try:
+                    total = int(header) if header else None
+                except (TypeError, ValueError):
+                    total = None
+                for channel in iter_m3u(playlist_lines(response, progress, total), response.geturl()):
+                    builder.append(channel)
+        else:
+            if not source.startswith('/'):
+                raise ValueError('Podaj pełną ścieżkę pliku albo adres HTTP/HTTPS.')
+            with open(source, 'rb') as handle:
+                for channel in iter_m3u(playlist_lines(handle, progress)):
+                    builder.append(channel)
+        if not builder.count:
+            raise ValueError('Lista nie zawiera obsługiwanych adresów kanałów.')
+        if builder.connection is not None and progress:
+            progress(-1, builder.count)
+        return builder.finish()
+    except Exception:
+        builder.abort()
+        raise
 
 
 def load_artwork(url):
@@ -154,10 +164,29 @@ _preview_lock = threading.Lock()
 _preview = None
 
 
+def discard_playlist(value):
+    if getattr(value, 'is_disk_catalogue', False):
+        value.close()
+
+
 def remember_playlist(source, channels):
     global _preview
     with _preview_lock:
-        _preview = (source, time.monotonic(), channels)
+        previous = _preview
+        cached = (source, time.monotonic(), channels)
+        _preview = cached
+    if previous:
+        discard_playlist(previous[2])
+    def expire():
+        global _preview
+        with _preview_lock:
+            if _preview is not cached:
+                return
+            _preview = None
+        discard_playlist(channels)
+    timer = threading.Timer(120, expire)
+    timer.daemon = True
+    timer.start()
 
 
 def take_playlist_preview(source):
@@ -167,6 +196,8 @@ def take_playlist_preview(source):
         _preview = None
     if cached and cached[0] == source and time.monotonic() - cached[1] < 120:
         return cached[2]
+    if cached:
+        discard_playlist(cached[2])
     return None
 
 
@@ -192,13 +223,18 @@ def playlist_error_message(error):
         return 'Błąd certyfikatu HTTPS. Sprawdź datę dekodera i adres dostawcy.'
     if isinstance(error, PlaylistLimitError):
         return str(error)
+    if getattr(error, 'sqlite_errorcode', None) == 13:
+        return 'Brak miejsca na katalog playlisty. Zwolnij pamięć dekodera lub podłącz dysk USB.'
     if isinstance(error, ValueError):
+        if str(error).startswith(('Brak miejsca', 'Duża playlista wymaga')):
+            return str(error)
         if str(error) == 'html_response':
             return 'Serwer zwrócił stronę WWW zamiast M3U. Sprawdź adres i dane konta.'
-        if '64 MiB' in str(error):
-            return 'Playlista przekracza limit 64 MiB. Użyj mniejszej listy od dostawcy.'
+        if '512 MiB' in str(error):
+            return 'Playlista przekracza limit 512 MiB. Użyj mniejszej listy od dostawcy.'
         return 'Odebrany plik nie zawiera obsługiwanych kanałów M3U.'
     if isinstance(error, FileNotFoundError):
         return 'Nie znaleziono pliku playlisty na dekoderze.'
     return 'Nie udało się połączyć z serwerem playlisty. Sprawdź sieć i adres.'
+
 

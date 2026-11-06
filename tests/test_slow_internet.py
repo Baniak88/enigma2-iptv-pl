@@ -4,11 +4,13 @@ import importlib.util
 from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import MagicMock, patch
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import unittest
 import xml.etree.ElementTree as ET
 
 ROOT=Path(__file__).resolve().parents[1] / 'Plugins/Extensions/IPTVPL'
-spec=importlib.util.spec_from_file_location('playlist', ROOT/'playlist.py')
+spec=importlib.util.spec_from_file_location('Plugins.Extensions.IPTVPL.playlist', ROOT/'playlist.py')
 playlist=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(playlist)
 tree=ast.parse((ROOT/'plugin.py').read_text())

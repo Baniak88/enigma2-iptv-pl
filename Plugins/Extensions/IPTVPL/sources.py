@@ -4,6 +4,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import socket
 import tempfile
 import threading
@@ -24,14 +25,14 @@ body{background:#101010;color:#fff;font:18px system-ui;margin:0;padding:24px}mai
 <form id="url-form"><label>Pełny adres playlisty<textarea id="playlist-url" rows="4" maxlength="16384" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="https://dostawca.pl/get.php?username=...&amp;password=...&amp;type=m3u_plus" required></textarea></label>
 <p>Przytrzymaj pole i wybierz „Wklej”. Zachowaj cały adres, razem z parametrami po znaku ?. Nie musi kończyć się na .m3u.</p><button id="send-url">Wyślij adres do dekodera</button></form>
 <hr><h2>Lub prześlij plik</h2><form id="file-form"><label>Plik M3U lub M3U8<input id="file" type="file" accept=".m3u,.m3u8" required></label>
-<p>Maksymalnie 64 MiB.</p><button id="send-file">Wyślij plik playlisty</button></form>
+<p>Maksymalnie 512 MiB.</p><button id="send-file">Wyślij plik playlisty</button></form>
 <p>Na koniec zatwierdź wybrane źródło zielonym przyciskiem pilota.</p></main>
 <script>
 function showStatus(text,state){const result=document.getElementById('result');result.textContent=text;result.style.borderColor=state==='ready'?'#35b66a':state==='error'?'#ff5964':'#e50914';}
 async function waitForDownload(code){for(;;){await new Promise(resolve=>setTimeout(resolve,700));const response=await fetch('/status',{headers:{'X-IPTVPL-Code':code},cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error();showStatus(data.message,data.state);if(data.state==='ready'||data.state==='error')return;}}
 async function send(path,body,headers){const code=document.getElementById('code');if(!code.reportValidity())return;const buttons=[...document.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);showStatus('Wysyłanie do dekodera…','downloading');document.getElementById('result').scrollIntoView({behavior:'smooth',block:'start'});try{const response=await fetch(path,{method:'POST',headers:{...headers,'X-IPTVPL-Code':code.value},body});const data=await response.json();showStatus(data.message,response.ok?data.state:'error');if(response.status===202)await waitForDownload(code.value);}catch(error){showStatus('Brak połączenia. Sprawdź ekran importu na dekoderze.','error');}finally{buttons.forEach(b=>b.disabled=false);}}
 document.getElementById('url-form').addEventListener('submit',function(e){e.preventDefault();const url=document.getElementById('playlist-url').value;send('/url',JSON.stringify({url}),{'Content-Type':'application/json'});});
-document.getElementById('file-form').addEventListener('submit',function(e){e.preventDefault();const file=document.getElementById('file').files[0];if(!file)return;if(file.size>67108864){document.getElementById('result').textContent='Plik przekracza limit 64 MiB.';return;}send('/upload',file,{'Content-Type':'application/octet-stream','X-Upload-Name':encodeURIComponent(file.name)});});
+document.getElementById('file-form').addEventListener('submit',function(e){e.preventDefault();const file=document.getElementById('file').files[0];if(!file)return;if(file.size>536870912){document.getElementById('result').textContent='Plik przekracza limit 512 MiB.';return;}send('/upload',file,{'Content-Type':'application/octet-stream','X-Upload-Name':encodeURIComponent(file.name)});});
 </script></html>
 '''
 
@@ -59,7 +60,7 @@ def import_playlist_stream(handle, name, size=None, directory=PLAYLIST_DIR, prog
     if not name.lower().endswith(('.m3u', '.m3u8')):
         raise ValueError('Wybierz plik z rozszerzeniem .m3u lub .m3u8.')
     if size is not None and (size <= 0 or size > MAX_BYTES):
-        raise ValueError('Plik jest pusty lub przekracza limit 64 MiB.')
+        raise ValueError('Plik jest pusty lub przekracza limit 512 MiB.')
     stem = re.sub(r'[^\u005cw.-]', '_', name.rsplit('.', 1)[0])[:64].strip('.') or 'playlista'
     os.makedirs(directory, mode=0o700, exist_ok=True)
     path = None
@@ -73,7 +74,9 @@ def import_playlist_stream(handle, name, size=None, directory=PLAYLIST_DIR, prog
                     break
                 received += len(chunk)
                 if received > MAX_BYTES:
-                    raise ValueError('Plik przekracza limit 64 MiB.')
+                    raise ValueError('Plik przekracza limit 512 MiB.')
+                if shutil.disk_usage(os.path.dirname(path)).free < len(chunk) + 32 * 1024 * 1024:
+                    raise ValueError('Brak miejsca na plik playlisty. Zwolnij pamięć dekodera lub użyj adresu URL zamiast pliku.')
                 output.write(chunk)
                 if progress:
                     progress(received, size)
@@ -130,12 +133,14 @@ class PlaylistUpload:
             with self.lock:
                 if not self.closed.is_set() and self.job == job:
                     self.state.update({'bytes': received, 'total': total,
-                                       'message': 'Pobieranie: %.2f MiB' % (received / 1048576.0)})
+                                       'message': ('Budowanie katalogu: %d pozycji…' % total) if received < 0 else ('Pobieranie: %.2f MiB' % (received / 1048576.0))})
         def run():
             try:
                 channels = load_playlist(url, timeout=self.timeout, progress=progress)
                 with self.lock:
                     if self.closed.is_set() or self.job != job:
+                        if getattr(channels, 'is_disk_catalogue', False):
+                            channels.close()
                         return
                     remember_playlist(url, channels)
                     self.events.put((url, len(channels)))
@@ -208,7 +213,7 @@ class PlaylistUpload:
                     size = int(self.headers.get('Content-Length', '0'))
                     limit = 32768 if self.path == '/url' else MAX_BYTES
                     if size <= 0 or size > limit:
-                        self.message(413, 'Dane adresu są puste lub za długie.' if self.path == '/url' else 'Plik jest pusty lub przekracza limit 64 MiB.')
+                        self.message(413, 'Dane adresu są puste lub za długie.' if self.path == '/url' else 'Plik jest pusty lub przekracza limit 512 MiB.')
                         return
                     if self.path == '/url':
                         data = self.rfile.read(size)
@@ -284,4 +289,5 @@ class PlaylistUpload:
 def import_local_playlist(path, directory=PLAYLIST_DIR):
     with open(path, 'rb') as handle:
         return import_playlist_stream(handle, os.path.basename(path), os.fstat(handle.fileno()).st_size, directory)
+
 

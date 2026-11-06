@@ -9,8 +9,9 @@ from types import SimpleNamespace as NS
 from unittest.mock import MagicMock, patch
 
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT))
 TREE=ast.parse((ROOT/'Plugins/Extensions/IPTVPL/plugin.py').read_text())
-spec=importlib.util.spec_from_file_location('playlist',ROOT/'Plugins/Extensions/IPTVPL/playlist.py')
+spec=importlib.util.spec_from_file_location('Plugins.Extensions.IPTVPL.playlist',ROOT/'Plugins/Extensions/IPTVPL/playlist.py')
 playlist=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(playlist)
 
@@ -45,7 +46,7 @@ class StreamingTests(unittest.TestCase):
         settings=NS(source=NS(value='/nonexistent/iptv.m3u'),slowinternet=NS(value=slow),player=NS(value='5001'),favourites=NS(value='[]',save=MagicMock()))
         ns={'Screen':Screen,'Label':Label,'Pixmap':Label,'MenuList':MagicMock(),'ActionMap':lambda *a:None,
             'settings':settings,'ePicLoad':MagicMock(),'deferToThread':MagicMock(),
-            'take_playlist_preview':playlist.take_playlist_preview,'playlist_error_message':playlist.playlist_error_message,
+            'discard_playlist':playlist.discard_playlist,'take_playlist_preview':playlist.take_playlist_preview,'playlist_error_message':playlist.playlist_error_message,
             'load_playlist':playlist.load_playlist,'load_artwork':playlist.load_artwork,
             'MoviePlayer':object,'eServiceReference':Ref,'configfile':MagicMock(),
             'MessageBox':NS(TYPE_INFO=1),'IPTVSettings':object,'VirtualKeyBoard':object}
@@ -92,7 +93,7 @@ class StreamingTests(unittest.TestCase):
         h.reload(); h.failed(None,h.request_id)
         self.assertEqual(len(h.channels),1); h.session.open.assert_not_called()
         h.cleanup(); h.loaded([channel(2)],h.request_id-1)
-        self.assertEqual(h.channels[0]['name'],'Kanał 1')
+        self.assertEqual(h.channels,[])  # Closed UI releases the current catalogue.
 
     def test_buffering_launch_guard_and_exception(self):
         h=self.build(True); h.channels=[channel(1)]; h.rebuild_rows()
@@ -153,6 +154,25 @@ class StreamingTests(unittest.TestCase):
         self.ns['deferToThread'].assert_not_called()
         self.assertEqual(h.channels,data)
         self.assertFalse(h.loading)
+
+    def test_disk_catalogue_integrates_with_home_search_and_cleanup(self):
+        from Plugins.Extensions.IPTVPL import catalogue
+        import tempfile
+        with tempfile.TemporaryDirectory() as d, patch.object(catalogue,'cache_directory',return_value=d), patch.object(catalogue,'MAX_IN_MEMORY',0):
+            builder=catalogue.CatalogueBuilder()
+            for i in range(12): builder.append(channel(i))
+            result=builder.finish(); path=result.path
+            h=self.build()
+            class Deferred:
+                def __init__(self,value): self.value=value
+                def addCallbacks(self,good,bad): return good(self.value)
+            self.ns['deferToThread'].side_effect=lambda fn,*args,**kwargs: Deferred(fn(*args,**kwargs))
+            h.loaded(result,h.request_id)
+            self.assertEqual(len(h.rows[0][1]),12)
+            h.searched('Kanał 11')
+            self.assertEqual(h.current()['name'],'Kanał 11')
+            self.assertEqual(sum(len(items) for _,items in h.rows),1)
+            h.cleanup(); self.assertFalse(Path(path).exists())
 
     def test_skin_bounds_all_resolutions(self):
         h=self.build()
