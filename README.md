@@ -57,6 +57,25 @@ odtwarzacz może stosować własne zasady. Tryb nie obniża automatycznie jakoś
 Jeśli łącze jest stale za wolne, wybierz wersję SD/niższej jakości dostępną na swojej liście.
 Fizyczny odbiornik wymaga osobnego sprawdzenia.
 
+## Ekran startowy
+
+Po uruchomieniu otwiera się pełnoekranowy, ciemny pulpit **Co oglądamy?**.
+Strzałki wybierają kafelek, OK go otwiera, EXIT zamyka wtyczkę.
+Biała ramka oznacza zaznaczony kafelek.
+
+- **Telewizja na żywo**: pozycje M3U spoza grup filmów i seriali.
+- **Filmy**: grupy zawierające film, movie, vod lub kino.
+- **Seriale**: grupy zawierające serial, series, sezon lub season (mają pierwszeństwo nad filmami).
+- **Zmień źródło / Ustawienia**: otwiera konfigurację listy i odtwarzania.
+- **Odśwież źródło**: otwiera wszystkie pozycje i pobiera listę na nowo.
+
+Pulpit nie wykonuje połączenia sieciowego przy starcie.
+Listy są wczytywane po wejściu w kategorię. Błąd źródła jest pokazywany w ekranie listy,
+bez okna modalnego; niebieski otwiera ustawienia, zielony ponawia próbę.
+Kategorie korzystają wyłącznie z metadanych M3U, nie dodają katalogu VOD ani Xtream API.
+Układ skaluje się do rozdzielczości GUI Enigma2 (niezależnie od rozdzielczości sygnału wideo).
+Brak listy lub odpowiednich grup oznacza pustą kategorię.
+
 ## Pilot
 
 - **OK**: odtwarzanie zaznaczonego kanału w systemowym MoviePlayer.
