@@ -167,6 +167,26 @@ Na ekranie przesyłania przycisk zmienia etykietę w zależności od stanu:
 Gotową listę można otworzyć zielonym przyciskiem albo OK.
 Czerwony lub EXIT zamyka ekran przesyłania bez zmiany źródła.
 
+## Pełna klawiatura ekranowa
+
+Wtyczka ma własną klawiaturę QWERTY, niezależną od klawiatury numerycznej obrazu Enigma2.
+Otwiera się przy **OK** na polu **Lista M3U** w ustawieniach, dodawaniu URL
+w menu **Playlisty** i wyszukiwaniu. Zawiera wszystkie drukowalne znaki ASCII,
+polskie litery, cyfry, małe/wielkie litery i znaki potrzebne do pełnych adresów URL.
+
+- **Strzałki + OK**: wybór i wpisanie znaku.
+- **Niebieski / ABC / #+=**: przełączenie wielkich liter i symboli.
+- **Żółty / Usuń znak**: usunięcie znaku przed kursorem.
+- **Kursor < / Kursor >**: przesunięcie kursora wewnątrz tekstu.
+- **Spacja**: wpisanie spacji, np. w wyszukiwaniu (URL nie może zawierać surowych odstępów).
+- **Zielony / Gotowe**: zatwierdzenie tekstu; w ustawieniach nadal trzeba zapisać zmiany.
+- **Czerwony / EXIT**: anulowanie bez zmiany poprzedniej wartości.
+- **0–9 na pilocie**: natychmiastowe wpisanie cyfry, bez wielokrotnego naciskania klawisza.
+
+Długie adresy są zachowywane w całości (do 16384 znaków); pole tekstowe pokazuje
+fragment wokół kursora i jego pozycję. W obsługujących to obrazach można także wpisywać
+znaki z klawiatury USB; tryb klawiatury dekodera jest przywracany po zamknięciu ekranu.
+
 ## Pilot
 
 - **Strzałki**: wybór zakładki, przycisku, pozycji lub grupy.
@@ -205,6 +225,7 @@ Nie deklarujemy przetestowania na fizycznym odbiorniku.
 
 Usuwanie: usuń katalog `/usr/lib/enigma2/python/Plugins/Extensions/IPTVPL`
 i uruchom ponownie GUI.
+
 
 
 

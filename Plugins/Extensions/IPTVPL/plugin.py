@@ -7,7 +7,6 @@ from Screens.InfoBar import MoviePlayer
 from Components.ActionMap import ActionMap
 from Components.Label import Label
 from Components.Pixmap import Pixmap
-from Screens.VirtualKeyBoard import VirtualKeyBoard
 from Components.MenuList import MenuList
 from Components.ConfigList import ConfigListScreen
 from Components.config import (config, configfile, ConfigSubsection, ConfigText,
@@ -49,6 +48,170 @@ def fit_skin(skin, fullscreen=False):
         if node.get('itemHeight'):
             node.set('itemHeight', str(max(20, int(int(node.get('itemHeight')) * scale))))
     return ET.tostring(root, encoding='unicode')
+
+
+def keyboard_rows(shift=False):
+    if shift:
+        rows = ['!@#$%^&*()_+', 'QWERTYUIOP{}', 'ASDFGHJKL:"|', 'ZXCVBNM<>?~`', 'ĄĆĘŁŃÓŚŹŻ /=']
+    else:
+        rows = ['1234567890-=', 'qwertyuiop[]', "asdfghjkl;'\\", 'zxcvbnm,./@_', 'ąćęłńóśźż ?:']
+    return [list(row) for row in rows] + [['Kursor <', 'Kursor >', 'Usuń znak', 'Spacja', 'ABC / #+=', 'Gotowe']]
+
+
+def keyboard_skin():
+    elements = ['''<screen name="IPTVKeyboard" position="center,center" size="1280,720" flags="wfNoBorder" backgroundColor="#00101010" title="Klawiatura">
+      <widget name="title" position="44,22" size="1192,45" font="Regular;30" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
+      <widget name="value" position="44,85" size="1192,95" font="Regular;26" foregroundColor="#00FFFFFF" backgroundColor="#00262626" />
+      <widget name="position" position="44,184" size="1192,28" font="Regular;18" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
+      <eLabel position="44,578" size="1192,27" text="Strzałki: wybierz klawisz   OK: wpisz znak   Klawisze 0–9: wpisz cyfrę" font="Regular;20" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />''']
+    for row, keys in enumerate(keyboard_rows()):
+        width, pitch = (88, 100) if row < 5 else (188, 200)
+        y = 220 + row * 54 if row < 5 else 510
+        for col in range(len(keys)):
+            x = 44 + col * pitch
+            font = 25 if row < 5 else 21
+            elements.append('<widget name="key%d_%d" position="%d,%d" size="%d,44" font="Regular;%d" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00262626" />' % (row, col, x, y, width, font))
+            elements.append('<widget name="keyfocus%d_%d" position="%d,%d" size="%d,4" backgroundColor="#00E50914" />' % (row, col, x, y + 46, width))
+    for x, text, color in [(44, 'Czerwony: anuluj', '#00EF4554'), (344, 'Zielony: gotowe', '#0035B66A'),
+                           (644, 'Żółty: usuń znak', '#00E6B93C'), (944, 'Niebieski: ABC / #+=', '#00558EFF')]:
+        elements.append('<eLabel position="%d,624" size="6,48" backgroundColor="%s" />' % (x, color))
+        elements.append('<eLabel position="%d,624" size="280,48" text="%s" font="Regular;21" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#00262626" />' % (x + 6, text))
+    elements.append('</screen>')
+    return ''.join(elements)
+
+
+class KeyboardText:
+    def __init__(self, value=''):
+        self.value = str(value or '')
+        self.cursor = len(self.value)
+
+    def insert(self, text):
+        if len(self.value) + len(text) <= 16384:
+            self.value = self.value[:self.cursor] + text + self.value[self.cursor:]
+            self.cursor += len(text)
+
+    def backspace(self):
+        if self.cursor:
+            self.value = self.value[:self.cursor - 1] + self.value[self.cursor:]
+            self.cursor -= 1
+
+    def move(self, delta):
+        self.cursor = max(0, min(len(self.value), self.cursor + delta))
+
+    def window(self):
+        start = max(0, self.cursor - 65)
+        end = min(len(self.value), start + 100)
+        return ('…' if start else '') + self.value[start:self.cursor] + '|' + self.value[self.cursor:end] + ('…' if end < len(self.value) else '')
+
+
+class IPTVKeyboard(Screen):
+    skin = keyboard_skin()
+
+    def __init__(self, session, title='Klawiatura', text=''):
+        self.skin = fit_skin(type(self).skin, fullscreen=True)
+        Screen.__init__(self, session)
+        self.buffer = KeyboardText(text)
+        self.shift = False
+        self.row = self.col = 0
+        self['title'] = Label(title)
+        self['value'] = Label('')
+        self['position'] = Label('')
+        for row, keys in enumerate(keyboard_rows()):
+            for col in range(len(keys)):
+                self['key%d_%d' % (row, col)] = Label('')
+                self['keyfocus%d_%d' % (row, col)] = Label('')
+        actions = {'ok': self.press, 'cancel': self.cancel, 'red': self.cancel, 'green': self.accept,
+                   'yellow': self.backspace, 'blue': self.toggle_shift,
+                   'left': lambda: self.move('left'), 'right': lambda: self.move('right'),
+                   'up': lambda: self.move('up'), 'down': lambda: self.move('down'),
+                   'gotAsciiCode': self.ascii_key}
+        for digit in range(10):
+            actions[str(digit)] = lambda value=str(digit): self.insert(value)
+        self['actions'] = ActionMap(['OkCancelActions', 'ColorActions', 'DirectionActions', 'NumberActions', 'AsciiActions'], actions, -3)
+        self.old_keyboard_mode = None
+        self.onExecBegin.append(self.enable_ascii)
+        self.onClose.append(self.restore_ascii)
+        self.onLayoutFinish.append(self.render)
+
+    def enable_ascii(self):
+        try:
+            from enigma import eRCInput
+            rc = eRCInput.getInstance()
+            self.old_keyboard_mode = rc.getKeyboardMode()
+            rc.setKeyboardMode(rc.kmAscii)
+        except (AttributeError, ImportError):
+            pass
+
+    def restore_ascii(self):
+        if self.old_keyboard_mode is not None:
+            from enigma import eRCInput
+            eRCInput.getInstance().setKeyboardMode(self.old_keyboard_mode)
+
+    def ascii_key(self):
+        from enigma import getPrevAsciiCode
+        value = getPrevAsciiCode()
+        if 0 <= value <= 0x10FFFF and chr(value).isprintable():
+            self.insert(chr(value))
+
+    def insert(self, value):
+        self.buffer.insert(value)
+        self.render()
+
+    def backspace(self):
+        self.buffer.backspace()
+        self.render()
+
+    def toggle_shift(self):
+        self.shift = not self.shift
+        self.render()
+
+    def move(self, direction):
+        if direction == 'left':
+            self.col = max(0, self.col - 1)
+        elif direction == 'right':
+            self.col = min(len(keyboard_rows(self.shift)[self.row]) - 1, self.col + 1)
+        elif direction == 'down' and self.row < 5:
+            if self.row == 4:
+                self.col //= 2
+            self.row += 1
+        elif direction == 'up' and self.row > 0:
+            if self.row == 5:
+                self.col *= 2
+            self.row -= 1
+        self.render()
+
+    def press(self):
+        if self.row < 5:
+            self.insert(keyboard_rows(self.shift)[self.row][self.col])
+        elif self.col == 0:
+            self.buffer.move(-1); self.render()
+        elif self.col == 1:
+            self.buffer.move(1); self.render()
+        elif self.col == 2:
+            self.backspace()
+        elif self.col == 3:
+            self.insert(' ')
+        elif self.col == 4:
+            self.toggle_shift()
+        else:
+            self.accept()
+
+    def render(self):
+        self['value'].setText(self.buffer.window())
+        self['position'].setText('Pozycja %d / %d znaków • %s' % (self.buffer.cursor, len(self.buffer.value),
+                                 'Wielkie litery i symbole' if self.shift else 'Małe litery i cyfry'))
+        for row, keys in enumerate(keyboard_rows(self.shift)):
+            for col, key in enumerate(keys):
+                self['key%d_%d' % (row, col)].setText('Spacja' if key == ' ' else key)
+                focus = self['keyfocus%d_%d' % (row, col)]
+                focus.show() if (row, col) == (self.row, self.col) else focus.hide()
+
+    def accept(self):
+        self.close(self.buffer.value)
+
+    def cancel(self):
+        self.close(None)
+
 
 
 def streaming_skin():
@@ -339,7 +502,7 @@ class IPTVHome(Screen):
     def activate(self):
         if self.area == 'nav':
             if self.nav == 5:
-                self.session.openWithCallback(self.searched, VirtualKeyBoard, title='Szukaj na swojej liście', text=self.query)
+                self.session.openWithCallback(self.searched, IPTVKeyboard, title='Szukaj na swojej liście', text=self.query)
             elif self.nav == 6:
                 self.playlists()
             else:
@@ -569,7 +732,7 @@ class IPTVPlaylistSources(Screen):
         elif selected[1] == 'file':
             self.session.openWithCallback(self.file_selected, IPTVPlaylistFile)
         elif selected[1] == 'url':
-            self.session.openWithCallback(self.url_selected, VirtualKeyBoard,
+            self.session.openWithCallback(self.url_selected, IPTVKeyboard,
                                           title='Adres URL playlisty M3U', text='https://')
         else:
             self.close(selected[2])
@@ -753,12 +916,26 @@ class IPTVSettings(Screen, ConfigListScreen):
         ConfigListScreen.__init__(self, [getConfigListEntry('Lista M3U', settings.source),
                                       getConfigListEntry('Odtwarzacz', settings.player),
                                       getConfigListEntry('Wolny internet', settings.slowinternet)], session=session)
-        self['help'] = Label('OK: edytuj adres. Przycisk Playlisty: wklej URL z telefonu lub wybierz plik.')
+        self['help'] = Label('OK: pełna klawiatura. Przycisk Playlisty: wklej URL z telefonu lub wybierz plik.')
         self['config'].onSelectionChanged.append(self.selection_help)
         self.onLayoutFinish.append(self.selection_help)
-        self['actions'] = ActionMap(['SetupActions', 'ColorActions'],
-                                   {'save': self.save, 'green': self.save,
-                                    'cancel': self.cancel, 'red': self.cancel, 'yellow': self.playlists}, -2)
+        self['actions'] = ActionMap(['OkCancelActions', 'SetupActions', 'ColorActions'],
+                                   {'ok': self.keyOK, 'save': self.save, 'green': self.save,
+                                    'cancel': self.cancel, 'red': self.cancel, 'yellow': self.playlists}, -3)
+
+    def keyOK(self):
+        current = self['config'].getCurrent()
+        if current and current[1] is settings.source:
+            self.session.openWithCallback(self.keyboard_done, IPTVKeyboard,
+                                          title='Pełny adres URL M3U lub ścieżka pliku',
+                                          text=settings.source.value)
+        elif current:
+            self.keyRight()
+
+    def keyboard_done(self, text=None):
+        if text is not None:
+            settings.source.value = text
+            self['config'].invalidateCurrent()
 
     def selection_help(self):
         current = self['config'].getCurrent()
@@ -766,7 +943,7 @@ class IPTVSettings(Screen, ConfigListScreen):
             return
         field = current[1]
         if field is settings.source:
-            text = 'OK: edytuj adres. Playlisty: wklej URL z telefonu lub wybierz plik.'
+            text = 'OK: pełna klawiatura. Playlisty: wklej URL z telefonu lub wybierz plik.'
         elif field is settings.player:
             text = 'Lewo / prawo: wybierz odtwarzacz. Domyślny jest zalecany.'
         else:
@@ -939,6 +1116,7 @@ def main(session, **kwargs):
 def Plugins(**kwargs):
     return [PluginDescriptor(name='IPTV PL', description='Odtwarzacz list IPTV M3U',
                              where=PluginDescriptor.WHERE_PLUGINMENU, fnc=main)]
+
 
 
 
