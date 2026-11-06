@@ -118,12 +118,12 @@ Sprawdzona lista jest przechowywana w pamięci do 120 sekund i używana przy zat
 Nie pokazujemy go w komunikacie potwierdzenia, ponieważ może zawierać hasło.
 Potwierdzenie i błędy są widoczne nad formularzem telefonu. Odrębne komunikaty obejmują HTTP 401/403,
 404, 429 i inne błędy serwera, przekroczenie czasu, DNS, HTTPS, stronę HTML zamiast M3U,
-brak kanałów oraz przekroczenie limitu 8 MiB. Podczas pobierania działa odczyt statusu przez przeglądarkę.
+brak kanałów oraz przekroczenie limitu 64 MiB. Podczas pobierania działa odczyt statusu przez przeglądarkę.
 
 Ekran importu musi pozostać otwarty. EXIT kończy odbieranie plików.
 Serwer działa tylko podczas otwartego ekranu; kod zmienia się przy każdym otwarciu.
 Po 10 błędnych kodach zamknij i otwórz ekran ponownie.
-Plik jest sprawdzany przed zapisaniem, limit wynosi 8 MiB.
+Plik jest sprawdzany przed zapisaniem, limit wynosi 64 MiB.
 To przesyłanie w lokalnej sieci HTTP — port 8099 nie wymaga przekierowania na routerze.
 Nie trzeba wysyłać playlisty do zewnętrznego serwisu.
 
@@ -187,6 +187,15 @@ Długie adresy są zachowywane w całości (do 16384 znaków); pole tekstowe pok
 fragment wokół kursora i jego pozycję. W obsługujących to obrazach można także wpisywać
 znaki z klawiatury USB; tryb klawiatury dekodera jest przywracany po zamknięciu ekranu.
 
+## Duże playlisty
+
+Limit listy pobieranej z URL, przesyłanej z telefonu i importowanej z pliku wynosi **64 MiB**.
+Odczyt i parsowanie odbywają się fragmentami po maksymalnie 64 KiB, bez tworzenia
+kilku kopii całej treści w pamięci. Przesyłane pliki są zapisywane i sprawdzane strumieniowo;
+podczas sprawdzania importu nie jest tworzony dodatkowy katalog kanałów w pamięci.
+Limit katalogu wynosi 200000 pozycji; przekroczenie jest zgłaszane błędem,
+bez cichego obcinania listy. Pojedynczy wiersz M3U może mieć do 1 MiB.
+
 ## Pilot
 
 - **Strzałki**: wybór zakładki, przycisku, pozycji lub grupy.
@@ -205,7 +214,7 @@ Przykład listy (adres demonstracyjny, zastąp go działającym strumieniem):
 https://example.com/live/index.m3u8
 ```
 
-Listy powinny mieć kodowanie UTF-8. Limit pobieranego pliku wynosi 8 MiB,
+Listy powinny mieć kodowanie UTF-8. Limit pobieranego pliku wynosi 64 MiB,
 a limit odczytu listy 20 sekund (60 w trybie wolnego internetu). Wtyczka nie dostarcza kanałów ani kont.
 Adres listy jest zapisany w ustawieniach Enigma2; jeśli zawiera hasło, chroń kopie tych ustawień.
 Brak obsługi DRM, Xtream API, EPG i dodatkowych nagłówków z dyrektyw VLC/Kodi.
@@ -225,6 +234,7 @@ Nie deklarujemy przetestowania na fizycznym odbiorniku.
 
 Usuwanie: usuń katalog `/usr/lib/enigma2/python/Plugins/Extensions/IPTVPL`
 i uruchom ponownie GUI.
+
 
 
 

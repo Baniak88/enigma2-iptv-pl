@@ -72,7 +72,7 @@ class StatusTests(unittest.TestCase):
             channels=playlist.load_playlist('https://example.com/list',progress=progress)
         self.assertEqual(len(channels),1)
         progress.assert_any_call(len(data),len(data))
-        response.read.side_effect=None; response.read.return_value=b'<!doctype html><html>Login</html>'
+        response.read.side_effect=io.BytesIO(b'<!doctype html><html>Login</html>').read
         with patch.object(playlist,'urlopen',return_value=response), self.assertRaises(ValueError) as error:
             playlist.load_playlist('https://example.com/list')
         self.assertIn('stronę WWW',playlist.playlist_error_message(error.exception))

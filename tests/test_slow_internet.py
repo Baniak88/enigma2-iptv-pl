@@ -1,3 +1,4 @@
+import io
 import ast
 import importlib.util
 from pathlib import Path
@@ -63,7 +64,7 @@ class Tests(unittest.TestCase):
 
     def test_loader_passes_timeout(self):
         r=MagicMock(); r.__enter__.return_value=r
-        r.read.return_value=b'https://example.com/live'
+        r.read.side_effect=io.BytesIO(b'https://example.com/live').read
         r.geturl.return_value='https://example.com/list'
         with patch.object(playlist,'urlopen',return_value=r) as op:
             playlist.load_playlist('https://example.com/list',timeout=60)

@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from queue import Queue
 from urllib.parse import unquote, urlsplit
 
-from .playlist import MAX_BYTES, parse_m3u, load_playlist, remember_playlist, playlist_error_message
+from .playlist import MAX_BYTES, parse_m3u, load_playlist, remember_playlist, playlist_error_message, count_playlist_file
 
 PLAYLIST_DIR = '/etc/enigma2/iptvpl/playlists'
 
@@ -24,14 +24,14 @@ body{background:#101010;color:#fff;font:18px system-ui;margin:0;padding:24px}mai
 <form id="url-form"><label>Pełny adres playlisty<textarea id="playlist-url" rows="4" maxlength="16384" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="https://dostawca.pl/get.php?username=...&amp;password=...&amp;type=m3u_plus" required></textarea></label>
 <p>Przytrzymaj pole i wybierz „Wklej”. Zachowaj cały adres, razem z parametrami po znaku ?. Nie musi kończyć się na .m3u.</p><button id="send-url">Wyślij adres do dekodera</button></form>
 <hr><h2>Lub prześlij plik</h2><form id="file-form"><label>Plik M3U lub M3U8<input id="file" type="file" accept=".m3u,.m3u8" required></label>
-<p>Maksymalnie 8 MiB.</p><button id="send-file">Wyślij plik playlisty</button></form>
+<p>Maksymalnie 64 MiB.</p><button id="send-file">Wyślij plik playlisty</button></form>
 <p>Na koniec zatwierdź wybrane źródło zielonym przyciskiem pilota.</p></main>
 <script>
 function showStatus(text,state){const result=document.getElementById('result');result.textContent=text;result.style.borderColor=state==='ready'?'#35b66a':state==='error'?'#ff5964':'#e50914';}
 async function waitForDownload(code){for(;;){await new Promise(resolve=>setTimeout(resolve,700));const response=await fetch('/status',{headers:{'X-IPTVPL-Code':code},cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error();showStatus(data.message,data.state);if(data.state==='ready'||data.state==='error')return;}}
 async function send(path,body,headers){const code=document.getElementById('code');if(!code.reportValidity())return;const buttons=[...document.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);showStatus('Wysyłanie do dekodera…','downloading');document.getElementById('result').scrollIntoView({behavior:'smooth',block:'start'});try{const response=await fetch(path,{method:'POST',headers:{...headers,'X-IPTVPL-Code':code.value},body});const data=await response.json();showStatus(data.message,response.ok?data.state:'error');if(response.status===202)await waitForDownload(code.value);}catch(error){showStatus('Brak połączenia. Sprawdź ekran importu na dekoderze.','error');}finally{buttons.forEach(b=>b.disabled=false);}}
 document.getElementById('url-form').addEventListener('submit',function(e){e.preventDefault();const url=document.getElementById('playlist-url').value;send('/url',JSON.stringify({url}),{'Content-Type':'application/json'});});
-document.getElementById('file-form').addEventListener('submit',function(e){e.preventDefault();const file=document.getElementById('file').files[0];if(!file)return;if(file.size>8388608){document.getElementById('result').textContent='Plik przekracza limit 8 MiB.';return;}send('/upload',file,{'Content-Type':'application/octet-stream','X-Upload-Name':encodeURIComponent(file.name)});});
+document.getElementById('file-form').addEventListener('submit',function(e){e.preventDefault();const file=document.getElementById('file').files[0];if(!file)return;if(file.size>67108864){document.getElementById('result').textContent='Plik przekracza limit 64 MiB.';return;}send('/upload',file,{'Content-Type':'application/octet-stream','X-Upload-Name':encodeURIComponent(file.name)});});
 </script></html>
 '''
 
@@ -54,27 +54,42 @@ def validate_playlist_url(value):
     return value
 
 
-def import_playlist(data, name, directory=PLAYLIST_DIR):
-    if len(data) > MAX_BYTES:
-        raise ValueError('Plik przekracza limit 8 MiB.')
-    name = name.replace('\\', '/').rsplit('/', 1)[-1]
+def import_playlist_stream(handle, name, size=None, directory=PLAYLIST_DIR, progress=None):
+    name = name.replace('\\\\', '/').rsplit('/', 1)[-1]
     if not name.lower().endswith(('.m3u', '.m3u8')):
         raise ValueError('Wybierz plik z rozszerzeniem .m3u lub .m3u8.')
-    channels = parse_m3u(data.decode('utf-8-sig', errors='replace'))
-    if not channels:
-        raise ValueError('Plik nie zawiera obsługiwanych adresów kanałów M3U.')
-    stem = re.sub(r'[^\w.-]', '_', name.rsplit('.', 1)[0])[:64].strip('.') or 'playlista'
+    if size is not None and (size <= 0 or size > MAX_BYTES):
+        raise ValueError('Plik jest pusty lub przekracza limit 64 MiB.')
+    stem = re.sub(r'[^\u005cw.-]', '_', name.rsplit('.', 1)[0])[:64].strip('.') or 'playlista'
     os.makedirs(directory, mode=0o700, exist_ok=True)
     path = None
     try:
-        with tempfile.NamedTemporaryFile(prefix=stem + '-', suffix='.m3u', dir=directory, delete=False) as handle:
-            path = handle.name
-            handle.write(data)
-        return path, len(channels)
+        received = 0
+        with tempfile.NamedTemporaryFile(prefix=stem + '-', suffix='.m3u', dir=directory, delete=False) as output:
+            path = output.name
+            while size is None or received < size:
+                chunk = handle.read(min(65536, (size - received) if size is not None else MAX_BYTES + 1 - received))
+                if not chunk:
+                    break
+                received += len(chunk)
+                if received > MAX_BYTES:
+                    raise ValueError('Plik przekracza limit 64 MiB.')
+                output.write(chunk)
+                if progress:
+                    progress(received, size)
+            if size is not None and received != size:
+                raise ValueError('Przesyłanie pliku nie zostało zakończone.')
+        count = count_playlist_file(path)
+        return path, count
     except Exception:
         if path:
             os.unlink(path)
         raise
+
+
+def import_playlist(data, name, directory=PLAYLIST_DIR):
+    import io
+    return import_playlist_stream(io.BytesIO(data), name, len(data), directory)
 
 
 def saved_playlists(directory=PLAYLIST_DIR):
@@ -193,12 +208,13 @@ class PlaylistUpload:
                     size = int(self.headers.get('Content-Length', '0'))
                     limit = 32768 if self.path == '/url' else MAX_BYTES
                     if size <= 0 or size > limit:
-                        self.message(413, 'Dane adresu są puste lub za długie.' if self.path == '/url' else 'Plik jest pusty lub przekracza limit 8 MiB.')
+                        self.message(413, 'Dane adresu są puste lub za długie.' if self.path == '/url' else 'Plik jest pusty lub przekracza limit 64 MiB.')
                         return
-                    data = self.rfile.read(size)
-                    if len(data) != size:
-                        self.message(400, 'Przesyłanie pliku nie zostało zakończone.')
-                        return
+                    if self.path == '/url':
+                        data = self.rfile.read(size)
+                        if len(data) != size:
+                            self.message(400, 'Przesyłanie adresu nie zostało zakończone.')
+                            return
                     if self.path == '/url':
                         try:
                             payload = json.loads(data.decode('utf-8'))
@@ -211,12 +227,16 @@ class PlaylistUpload:
                             return
                         self.reply(202, json.dumps(owner.download_status()))
                         return
-                    # Serialize close with commit, so a closed screen never accepts a new file.
-                    with owner.lock:
+                    def upload_progress(received, total):
                         if owner.closed.is_set():
-                            self.message(409, 'Ekran importu jest zamknięty.')
-                            return
-                        path, count = import_playlist(data, unquote(self.headers.get('X-Upload-Name', '')), owner.directory)
+                            raise ValueError('Ekran importu jest zamknięty.')
+                        with owner.lock:
+                            owner.state = {'state': 'downloading', 'bytes': received, 'total': total,
+                                           'message': 'Odbieranie pliku: %.2f MiB' % (received / 1048576.0)}
+                    path, count = import_playlist_stream(
+                        self.rfile, unquote(self.headers.get('X-Upload-Name', '')),
+                        size, owner.directory, upload_progress)
+                    with owner.lock:
                         if owner.closed.is_set():
                             os.unlink(path)
                             self.message(409, 'Ekran importu jest zamknięty.')
@@ -225,8 +245,13 @@ class PlaylistUpload:
                         owner.state = {'state': 'ready', 'count': count, 'message': 'Plik sprawdzony: %d pozycji. Naciśnij zielony przycisk pilota, aby użyć listy.' % count}
                     self.reply(200, json.dumps(owner.download_status()))
                 except ValueError as error:
-                    self.message(400, str(error))
+                    message = playlist_error_message(error) if str(error) == 'html_response' else str(error)
+                    with owner.lock:
+                        owner.state = {'state': 'error', 'message': message}
+                    self.message(400, message)
                 except (OSError, socket.timeout):
+                    with owner.lock:
+                        owner.state = {'state': 'error', 'message': 'Nie udało się odebrać lub zapisać pliku.'}
                     self.message(500, 'Nie udało się odebrać lub zapisać pliku. Spróbuj ponownie.')
 
         class Server(HTTPServer):
@@ -258,7 +283,5 @@ class PlaylistUpload:
 
 def import_local_playlist(path, directory=PLAYLIST_DIR):
     with open(path, 'rb') as handle:
-        data = handle.read(MAX_BYTES + 1)
-    return import_playlist(data, os.path.basename(path), directory)
-
+        return import_playlist_stream(handle, os.path.basename(path), os.fstat(handle.fileno()).st_size, directory)
 

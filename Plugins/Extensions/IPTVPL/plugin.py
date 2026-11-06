@@ -766,7 +766,7 @@ class IPTVPlaylistSources(Screen):
     def import_failed(self, failure):
         self.busy = False
         if not self.disposed:
-            self['status'].setText('Nie udało się dodać pliku. Wybierz listę M3U do 8 MiB zawierającą adresy kanałów.')
+            self['status'].setText('Nie udało się dodać pliku. Wybierz listę M3U do 64 MiB zawierającą adresy kanałów.')
 
 
 class IPTVPlaylistFile(Screen):
@@ -1116,6 +1116,7 @@ def main(session, **kwargs):
 def Plugins(**kwargs):
     return [PluginDescriptor(name='IPTV PL', description='Odtwarzacz list IPTV M3U',
                              where=PluginDescriptor.WHERE_PLUGINMENU, fnc=main)]
+
 
 
 

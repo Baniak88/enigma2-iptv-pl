@@ -1,3 +1,4 @@
+import io
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -42,7 +43,7 @@ class PlaylistTests(unittest.TestCase):
         from unittest.mock import MagicMock
         response = MagicMock()
         response.__enter__.return_value = response
-        response.read.return_value = b'#EXTINF:-1,TV\nstream.m3u8'
+        response.read.side_effect = io.BytesIO(b'#EXTINF:-1,TV\nstream.m3u8').read
         response.geturl.return_value = 'https://example.com/new/list.m3u'
         with patch.object(p, 'urlopen', return_value=response) as opener:
             self.assertEqual(p.load_playlist('https://example.com/list')[0]['url'], 'https://example.com/new/stream.m3u8')
@@ -51,3 +52,4 @@ class PlaylistTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
