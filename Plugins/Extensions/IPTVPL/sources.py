@@ -11,23 +11,25 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from queue import Queue
 from urllib.parse import unquote, urlsplit
 
-from .playlist import MAX_BYTES, parse_m3u
+from .playlist import MAX_BYTES, parse_m3u, load_playlist, remember_playlist, playlist_error_message
 
 PLAYLIST_DIR = '/etc/enigma2/iptvpl/playlists'
 
 PAGE = '''<!doctype html><html lang="pl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>IPTV PL — dodaj playlistę</title><style>
-body{background:#101010;color:#fff;font:18px system-ui;margin:0;padding:24px}main{max-width:540px;margin:20px auto}h1{font-size:30px}h2{font-size:23px;margin-top:32px}b{color:#ef3340}label{display:block;margin-top:20px}input,textarea,button{box-sizing:border-box;width:100%;padding:16px;margin-top:10px;border-radius:10px;border:1px solid #555;font:inherit;background:#262626;color:#fff}textarea{resize:vertical;overflow-wrap:anywhere}button{background:#e50914;border:0;font-weight:700}p{color:#bbb;line-height:1.5}#result{white-space:pre-wrap}button:disabled{opacity:.5}hr{border:0;border-top:1px solid #383838;margin-top:32px}</style>
+body{background:#101010;color:#fff;font:18px system-ui;margin:0;padding:24px}main{max-width:540px;margin:20px auto}h1{font-size:30px}h2{font-size:23px;margin-top:32px}b{color:#ef3340}label{display:block;margin-top:20px}input,textarea,button{box-sizing:border-box;width:100%;padding:16px;margin-top:10px;border-radius:10px;border:1px solid #555;font:inherit;background:#262626;color:#fff}textarea{resize:vertical;overflow-wrap:anywhere}button{background:#e50914;border:0;font-weight:700}p{color:#bbb;line-height:1.5}#result{white-space:pre-wrap;position:sticky;top:8px;background:#262626;border-left:4px solid #e50914;padding:16px;z-index:2}#result:empty{display:none}button:disabled{opacity:.5}hr{border:0;border-top:1px solid #383838;margin-top:32px}</style>
 <main><b>IPTV PL</b><h1>Dodaj playlistę</h1><p>Telefon i dekoder muszą być w tej samej sieci. Wpisz kod z telewizora i wybierz jedną z opcji.</p>
 <label>Kod z telewizora<input id="code" inputmode="numeric" autocomplete="off" pattern="[0-9]{6}" maxlength="6" required></label>
-<h2>Wklej cały adres URL M3U</h2>
+<p id="result" role="status" aria-live="polite"></p><h2>Wklej cały adres URL M3U</h2>
 <form id="url-form"><label>Pełny adres playlisty<textarea id="playlist-url" rows="4" maxlength="16384" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="https://dostawca.pl/get.php?username=...&amp;password=...&amp;type=m3u_plus" required></textarea></label>
 <p>Przytrzymaj pole i wybierz „Wklej”. Zachowaj cały adres, razem z parametrami po znaku ?. Nie musi kończyć się na .m3u.</p><button id="send-url">Wyślij adres do dekodera</button></form>
 <hr><h2>Lub prześlij plik</h2><form id="file-form"><label>Plik M3U lub M3U8<input id="file" type="file" accept=".m3u,.m3u8" required></label>
 <p>Maksymalnie 8 MiB.</p><button id="send-file">Wyślij plik playlisty</button></form>
-<p id="result" role="status" aria-live="polite"></p><p>Na koniec zatwierdź wybrane źródło zielonym przyciskiem pilota.</p></main>
+<p>Na koniec zatwierdź wybrane źródło zielonym przyciskiem pilota.</p></main>
 <script>
-async function send(path,body,headers){const code=document.getElementById('code');if(!code.reportValidity())return;const result=document.getElementById('result');const buttons=[...document.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);result.textContent='Przesyłanie…';try{const response=await fetch(path,{method:'POST',headers:{...headers,'X-IPTVPL-Code':code.value},body});const data=await response.json();result.textContent=data.message;}catch(error){result.textContent='Brak połączenia. Sprawdź, czy ekran importu jest otwarty na dekoderze.';}finally{buttons.forEach(b=>b.disabled=false);}}
+function showStatus(text,state){const result=document.getElementById('result');result.textContent=text;result.style.borderColor=state==='ready'?'#35b66a':state==='error'?'#ff5964':'#e50914';}
+async function waitForDownload(code){for(;;){await new Promise(resolve=>setTimeout(resolve,700));const response=await fetch('/status',{headers:{'X-IPTVPL-Code':code},cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error();showStatus(data.message,data.state);if(data.state==='ready'||data.state==='error')return;}}
+async function send(path,body,headers){const code=document.getElementById('code');if(!code.reportValidity())return;const buttons=[...document.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);showStatus('Wysyłanie do dekodera…','downloading');document.getElementById('result').scrollIntoView({behavior:'smooth',block:'start'});try{const response=await fetch(path,{method:'POST',headers:{...headers,'X-IPTVPL-Code':code.value},body});const data=await response.json();showStatus(data.message,response.ok?data.state:'error');if(response.status===202)await waitForDownload(code.value);}catch(error){showStatus('Brak połączenia. Sprawdź ekran importu na dekoderze.','error');}finally{buttons.forEach(b=>b.disabled=false);}}
 document.getElementById('url-form').addEventListener('submit',function(e){e.preventDefault();const url=document.getElementById('playlist-url').value;send('/url',JSON.stringify({url}),{'Content-Type':'application/json'});});
 document.getElementById('file-form').addEventListener('submit',function(e){e.preventDefault();const file=document.getElementById('file').files[0];if(!file)return;if(file.size>8388608){document.getElementById('result').textContent='Plik przekracza limit 8 MiB.';return;}send('/upload',file,{'Content-Type':'application/octet-stream','X-Upload-Name':encodeURIComponent(file.name)});});
 </script></html>
@@ -85,7 +87,7 @@ def saved_playlists(directory=PLAYLIST_DIR):
 
 class PlaylistUpload:
     """Temporary PIN-protected receiver, started only by the upload screen."""
-    def __init__(self, host='0.0.0.0', port=8099, directory=PLAYLIST_DIR):
+    def __init__(self, host='0.0.0.0', port=8099, directory=PLAYLIST_DIR, timeout=20):
         self.code = '%06d' % secrets.randbelow(1000000)
         self.events = Queue()
         self.directory = directory
@@ -94,6 +96,42 @@ class PlaylistUpload:
         self.httpd = None
         self.host, self.port = host, port
         self.lock = threading.Lock()
+        self.timeout = timeout
+        self.job = 0
+        self.state = {'state': 'idle', 'message': 'Wklej URL lub prześlij plik.'}
+
+    def download_status(self):
+        with self.lock:
+            return dict(self.state)
+
+    def begin_download(self, url):
+        with self.lock:
+            if self.closed.is_set() or self.state['state'] == 'downloading':
+                return False
+            self.job += 1
+            job = self.job
+            self.state = {'state': 'downloading', 'message': 'Łączenie z serwerem playlisty…', 'bytes': 0}
+        def progress(received, total):
+            with self.lock:
+                if not self.closed.is_set() and self.job == job:
+                    self.state.update({'bytes': received, 'total': total,
+                                       'message': 'Pobieranie: %.2f MiB' % (received / 1048576.0)})
+        def run():
+            try:
+                channels = load_playlist(url, timeout=self.timeout, progress=progress)
+                with self.lock:
+                    if self.closed.is_set() or self.job != job:
+                        return
+                    remember_playlist(url, channels)
+                    self.events.put((url, len(channels)))
+                    self.state = {'state': 'ready', 'count': len(channels),
+                                  'message': 'Pobrano i sprawdzono %d pozycji. Zielony przycisk pilota: zapisz i otwórz listę.' % len(channels)}
+            except Exception as error:
+                with self.lock:
+                    if not self.closed.is_set() and self.job == job:
+                        self.state = {'state': 'error', 'message': playlist_error_message(error)}
+        threading.Thread(target=run, name='IPTVPL-download', daemon=True).start()
+        return True
 
     def start(self):
         owner = self
@@ -121,6 +159,13 @@ class PlaylistUpload:
                 self.reply(status, json.dumps({'message': text}))
 
             def do_GET(self):
+                if self.path == '/status':
+                    code = self.headers.get('X-IPTVPL-Code', '')
+                    if not hmac.compare_digest(code.encode('utf-8'), owner.code.encode('utf-8')):
+                        self.message(403, 'Nieprawidłowy kod z telewizora.')
+                        return
+                    self.reply(200, json.dumps(owner.download_status()))
+                    return
                 if self.path != '/':
                     self.message(404, 'Nie znaleziono strony.')
                 else:
@@ -137,6 +182,9 @@ class PlaylistUpload:
                 if not hmac.compare_digest(code.encode('utf-8'), owner.code.encode('utf-8')):
                     owner.failed_codes += 1
                     self.message(403, 'Nieprawidłowy kod z telewizora.')
+                    return
+                if self.path == '/upload' and owner.download_status()['state'] == 'downloading':
+                    self.message(409, 'Trwa pobieranie playlisty. Poczekaj na wynik.')
                     return
                 if self.headers.get('Transfer-Encoding'):
                     self.message(400, 'Nieobsługiwany sposób przesyłania pliku.')
@@ -158,12 +206,10 @@ class PlaylistUpload:
                         except (UnicodeError, ValueError):
                             self.message(400, 'Nieprawidłowy adres. Wklej pełny URL HTTP/HTTPS bez odstępów.')
                             return
-                        with owner.lock:
-                            if owner.closed.is_set():
-                                self.message(409, 'Ekran importu jest zamknięty.')
-                                return
-                            owner.events.put((url, None))
-                        self.message(200, 'Adres odebrany. Naciśnij zielony przycisk pilota, aby zapisać adres i wczytać playlistę.')
+                        if not owner.begin_download(url):
+                            self.message(409, 'Trwa pobieranie. Poczekaj na wynik lub zamknij ekran importu.')
+                            return
+                        self.reply(202, json.dumps(owner.download_status()))
                         return
                     # Serialize close with commit, so a closed screen never accepts a new file.
                     with owner.lock:
@@ -176,7 +222,8 @@ class PlaylistUpload:
                             self.message(409, 'Ekran importu jest zamknięty.')
                             return
                         owner.events.put((path, count))
-                    self.message(200, 'Przesłano %d pozycji. Naciśnij zielony przycisk na pilocie, aby użyć tej playlisty.' % count)
+                        owner.state = {'state': 'ready', 'count': count, 'message': 'Plik sprawdzony: %d pozycji. Naciśnij zielony przycisk pilota, aby użyć listy.' % count}
+                    self.reply(200, json.dumps(owner.download_status()))
                 except ValueError as error:
                     self.message(400, str(error))
                 except (OSError, socket.timeout):
@@ -213,4 +260,5 @@ def import_local_playlist(path, directory=PLAYLIST_DIR):
     with open(path, 'rb') as handle:
         data = handle.read(MAX_BYTES + 1)
     return import_playlist(data, os.path.basename(path), directory)
+
 

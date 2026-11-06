@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from urllib.parse import quote
 import xml.etree.ElementTree as ET
 
@@ -82,10 +82,11 @@ class SourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             r=self.receiver(d)
             body=json.dumps({'url':value}).encode('utf-8')
-            status,reply=self.request(r,'POST','/url',body)
-            self.assertEqual(status,200)
-            source,count=r.events.get(timeout=1)
-            self.assertEqual(source,value); self.assertIsNone(count)
+            with patch('Plugins.Extensions.IPTVPL.sources.load_playlist',return_value=[{'name':'TV','url':'https://example.com/live','group':'TV'}]):
+                status,reply=self.request(r,'POST','/url',body)
+                self.assertEqual(status,202)
+                source,count=r.events.get(timeout=1)
+            self.assertEqual(source,value); self.assertEqual(count,1)
             self.assertEqual(saved_playlists(d),[])
             self.assertNotIn('username',reply.decode())
             status,page=self.request(r,'GET')

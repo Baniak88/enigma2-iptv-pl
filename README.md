@@ -108,12 +108,17 @@ W górnym menu wybierz **Playlisty**. Możesz też wejść w ustawienia
 3. Otwórz adres pokazany na telewizorze, np. `http://192.168.4.128:8099`.
 4. Wpisz sześciocyfrowy kod z telewizora. W polu **Wklej cały adres URL M3U** przytrzymaj palcem i wybierz **Wklej**, potem **Wyślij adres do dekodera**.
    Alternatywnie w sekcji **Lub prześlij plik** wybierz plik M3U i naciśnij **Wyślij plik playlisty**.
-5. Po potwierdzeniu naciśnij **zielony** na pilocie, aby zapisać wybrany URL lub plik jako źródło i wczytać listę.
+5. Poczekaj na **Pobrano i sprawdzono … pozycji** albo komunikat błędu. Telefon i telewizor pokazują postęp pobierania.
+6. Po udanym pobraniu naciśnij **zielony** na pilocie, aby zapisać źródło i otworzyć listę.
 
 Cały URL jest przekazywany bez zmiany parametrów, kodowania procentowego ani znaków `&` i `+`.
 Nie musi kończyć się na `.m3u` — obsługiwane są adresy typu `https://dostawca.pl/get.php?username=...&password=...&type=m3u_plus`.
-Limit adresu wynosi 16384 znaków. Adres nie jest pobierany ani aktywowany przed zatwierdzeniem pilotem.
+Limit adresu wynosi 16384 znaków. Lista jest pobierana i sprawdzana od razu po wysłaniu URL, ale aktywne źródło zmienia się dopiero po zatwierdzeniu pilotem.
+Sprawdzona lista jest przechowywana w pamięci do 120 sekund i używana przy zatwierdzeniu bez drugiego żądania.
 Nie pokazujemy go w komunikacie potwierdzenia, ponieważ może zawierać hasło.
+Potwierdzenie i błędy są widoczne nad formularzem telefonu. Odrębne komunikaty obejmują HTTP 401/403,
+404, 429 i inne błędy serwera, przekroczenie czasu, DNS, HTTPS, stronę HTML zamiast M3U,
+brak kanałów oraz przekroczenie limitu 8 MiB. Podczas pobierania działa odczyt statusu przez przeglądarkę.
 
 Ekran importu musi pozostać otwarty. EXIT kończy odbieranie plików.
 Serwer działa tylko podczas otwartego ekranu; kod zmienia się przy każdym otwarciu.
@@ -187,6 +192,7 @@ Nie deklarujemy przetestowania na fizycznym odbiorniku.
 
 Usuwanie: usuń katalog `/usr/lib/enigma2/python/Plugins/Extensions/IPTVPL`
 i uruchom ponownie GUI.
+
 
 
 

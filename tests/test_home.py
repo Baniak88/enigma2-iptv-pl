@@ -45,6 +45,7 @@ class StreamingTests(unittest.TestCase):
         settings=NS(source=NS(value='/nonexistent/iptv.m3u'),slowinternet=NS(value=slow),player=NS(value='5001'),favourites=NS(value='[]',save=MagicMock()))
         ns={'Screen':Screen,'Label':Label,'Pixmap':Label,'MenuList':MagicMock(),'ActionMap':lambda *a:None,
             'settings':settings,'ePicLoad':MagicMock(),'deferToThread':MagicMock(),
+            'take_playlist_preview':playlist.take_playlist_preview,'playlist_error_message':playlist.playlist_error_message,
             'load_playlist':playlist.load_playlist,'load_artwork':playlist.load_artwork,
             'MoviePlayer':object,'eServiceReference':Ref,'configfile':MagicMock(),
             'MessageBox':NS(TYPE_INFO=1),'IPTVSettings':object,'VirtualKeyBoard':object}
@@ -142,6 +143,16 @@ class StreamingTests(unittest.TestCase):
             by=int(button.get('position').split(',')[1]); bh=int(button.get('size').split(',')[1])
             my=int(marker.get('position').split(',')[1])
             self.assertGreaterEqual(my,by+bh)
+
+    def test_confirmed_preview_is_used_without_second_download(self):
+        h=self.build(); source='https://example.com/confirmed-list'
+        self.ns['settings'].source.value=source
+        data=[channel(1)]
+        playlist.remember_playlist(source,data)
+        h.reload()
+        self.ns['deferToThread'].assert_not_called()
+        self.assertEqual(h.channels,data)
+        self.assertFalse(h.loading)
 
     def test_skin_bounds_all_resolutions(self):
         h=self.build()

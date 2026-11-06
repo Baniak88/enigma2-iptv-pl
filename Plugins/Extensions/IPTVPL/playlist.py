@@ -1,5 +1,7 @@
 """M3U input, independent of Enigma2."""
 import re
+import threading
+import time
 from urllib.parse import urljoin, urlsplit
 from urllib.request import Request, urlopen
 
@@ -41,12 +43,32 @@ def parse_m3u(text, base=''):
     return channels
 
 
-def load_playlist(source, timeout=20):
+def load_playlist(source, timeout=20, progress=None):
     source = source.strip()
     if source.lower().startswith(('http://', 'https://')):
         request = Request(source, headers={'User-Agent': 'Enigma2-IPTVPL/1.0'})
         with urlopen(request, timeout=timeout) as response:
-            data = response.read(MAX_BYTES + 1)
+            if progress is None:
+                data = response.read(MAX_BYTES + 1)
+            else:
+                chunks = []
+                received = 0
+                header = response.headers.get('Content-Length') if hasattr(response, 'headers') else None
+                try:
+                    total = int(header) if header else None
+                except (TypeError, ValueError):
+                    total = None
+                if progress:
+                    progress(0, total)
+                while received <= MAX_BYTES:
+                    chunk = response.read(min(65536, MAX_BYTES + 1 - received))
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    received += len(chunk)
+                    if progress:
+                        progress(received, total)
+                data = b''.join(chunks)
             base = response.geturl()
     else:
         if not source.startswith('/'):
@@ -56,7 +78,10 @@ def load_playlist(source, timeout=20):
         base = ''
     if len(data) > MAX_BYTES:
         raise ValueError('Lista przekracza limit 8 MiB.')
-    channels = parse_m3u(data.decode('utf-8-sig', errors='replace'), base)
+    text = data.decode('utf-8-sig', errors='replace')
+    if text.lstrip().lower().startswith(('<!doctype html', '<html')):
+        raise ValueError('html_response')
+    channels = parse_m3u(text, base)
     if not channels:
         raise ValueError('Lista nie zawiera obsługiwanych adresów kanałów.')
     return channels
@@ -84,3 +109,55 @@ def load_artwork(url):
             os.unlink(path)
         raise
 
+
+
+
+_preview_lock = threading.Lock()
+_preview = None
+
+
+def remember_playlist(source, channels):
+    global _preview
+    with _preview_lock:
+        _preview = (source, time.monotonic(), channels)
+
+
+def take_playlist_preview(source):
+    global _preview
+    with _preview_lock:
+        cached = _preview
+        _preview = None
+    if cached and cached[0] == source and time.monotonic() - cached[1] < 120:
+        return cached[2]
+    return None
+
+
+def playlist_error_message(error):
+    """User-facing errors must not contain URLs, passwords or provider responses."""
+    import socket
+    import ssl
+    from urllib.error import HTTPError, URLError
+    if isinstance(error, HTTPError):
+        if error.code in (401, 403):
+            return 'Serwer odrzucił dostęp (HTTP %d). Sprawdź dane konta i ważność listy.' % error.code
+        if error.code == 404:
+            return 'Nie znaleziono playlisty (HTTP 404). Sprawdź cały adres URL.'
+        if error.code == 429:
+            return 'Za dużo żądań (HTTP 429). Poczekaj chwilę i ponów próbę.'
+        return 'Błąd serwera playlisty (HTTP %d). Spróbuj później.' % error.code
+    reason = error.reason if isinstance(error, URLError) else error
+    if isinstance(reason, (socket.timeout, TimeoutError)):
+        return 'Przekroczono czas oczekiwania. Sprawdź internet lub włącz tryb Wolny internet.'
+    if isinstance(reason, socket.gaierror):
+        return 'Nie można odnaleźć serwera. Sprawdź adres i połączenie internetowe.'
+    if isinstance(reason, ssl.SSLError):
+        return 'Błąd certyfikatu HTTPS. Sprawdź datę dekodera i adres dostawcy.'
+    if isinstance(error, ValueError):
+        if str(error) == 'html_response':
+            return 'Serwer zwrócił stronę WWW zamiast M3U. Sprawdź adres i dane konta.'
+        if '8 MiB' in str(error):
+            return 'Playlista przekracza limit 8 MiB. Użyj mniejszej listy od dostawcy.'
+        return 'Odebrany plik nie zawiera obsługiwanych kanałów M3U.'
+    if isinstance(error, FileNotFoundError):
+        return 'Nie znaleziono pliku playlisty na dekoderze.'
+    return 'Nie udało się połączyć z serwerem playlisty. Sprawdź sieć i adres.'

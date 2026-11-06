@@ -13,7 +13,7 @@ from Components.ConfigList import ConfigListScreen
 from Components.config import (config, configfile, ConfigSubsection, ConfigText,
                                ConfigSelection, ConfigYesNo, getConfigListEntry)
 from twisted.internet.threads import deferToThread
-from .playlist import load_playlist, load_artwork
+from .playlist import load_playlist, load_artwork, take_playlist_preview, playlist_error_message
 from .sources import PlaylistUpload, saved_playlists, import_local_playlist, validate_playlist_url
 
 config.plugins.iptvpl = ConfigSubsection()
@@ -193,6 +193,10 @@ class IPTVHome(Screen):
         self.status_text = 'Odświeżanie listy w tle…'
         self.render()
         timeout = 60 if settings.slowinternet.value else 20
+        preview = take_playlist_preview(source)
+        if preview is not None:
+            self.loaded(preview, request)
+            return
         deferToThread(load_playlist, source, timeout=timeout).addCallbacks(
             lambda channels: self.loaded(channels, request),
             lambda failure: self.failed(failure, request))
@@ -210,8 +214,11 @@ class IPTVHome(Screen):
         if self.disposed or request != self.request_id:
             return
         self.loading = False
-        self.status_text = 'Błąd źródła. Niebieski: ustawienia • Zielony: ponów'
+        self.status_text = playlist_error_message(getattr(failure, 'value', failure))
         self.render()
+        if not self.channels:
+            self['hero'].setText('Błąd pobierania listy')
+            self['summary'].setText(self.status_text)
 
     def rebuild_rows(self):
         channels = self.channels
@@ -627,7 +634,7 @@ class IPTVPlaylistUpload(Screen):
       <eLabel position="35,110" size="1030,65" text="1. Połącz telefon z tą samą siecią Wi-Fi.\n2. Otwórz poniższy adres w przeglądarce telefonu:" font="Regular;25" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
       <widget name="address" position="35,200" size="1030,60" font="Regular;38" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
       <widget name="code" position="35,285" size="1030,55" font="Regular;36" foregroundColor="#00E50914" backgroundColor="#00101010" />
-      <eLabel position="35,370" size="1030,75" text="3. Wpisz kod. Wklej cały adres URL lub wybierz plik M3U.\n4. Po przesłaniu naciśnij zielony przycisk pilota." font="Regular;25" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
+      <eLabel position="35,370" size="1030,75" text="3. Wpisz kod. Wklej cały adres URL lub wybierz plik M3U.\n4. Poczekaj na wynik pobierania. Zielony: otwórz listę." font="Regular;25" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
       <widget name="status" position="35,470" size="1030,70" font="Regular;23" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
       <eLabel position="35,565" size="1030,35" text="Zielony: użyj przesłanej playlisty    EXIT: zakończ przesyłanie" font="Regular;23" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
     </screen>'''
@@ -636,7 +643,7 @@ class IPTVPlaylistUpload(Screen):
         from enigma import eTimer
         self.skin = fit_skin(type(self).skin)
         Screen.__init__(self, session)
-        self.receiver = PlaylistUpload()
+        self.receiver = PlaylistUpload(timeout=60 if settings.slowinternet.value else 20)
         self.path = None
         self.disposed = False
         self['address'] = Label('Uruchamianie…')
@@ -668,6 +675,9 @@ class IPTVPlaylistUpload(Screen):
 
     def poll(self):
         from queue import Empty
+        state = self.receiver.download_status()
+        if not self.disposed and state['state'] != 'idle':
+            self['status'].setText(state['message'])
         while not self.disposed:
             try:
                 path, count = self.receiver.events.get_nowait()
@@ -679,6 +689,13 @@ class IPTVPlaylistUpload(Screen):
 
     def use_file(self):
         self.poll()
+        state = self.receiver.download_status()
+        if state['state'] == 'downloading':
+            self['status'].setText('Trwa pobieranie — poczekaj na potwierdzenie.')
+            return
+        if state['state'] == 'error':
+            self['status'].setText(state['message'])
+            return
         if self.path:
             self.close(self.path)
         else:
@@ -877,6 +894,7 @@ def main(session, **kwargs):
 def Plugins(**kwargs):
     return [PluginDescriptor(name='IPTV PL', description='Odtwarzacz list IPTV M3U',
                              where=PluginDescriptor.WHERE_PLUGINMENU, fnc=main)]
+
 
 
 
