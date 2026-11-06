@@ -123,6 +123,17 @@ class StreamingTests(unittest.TestCase):
         h.art_decoded()
         self.assertFalse(h.logo_busy); self.assertFalse(h['art'].visible)
 
+    def test_playlist_menu_and_activation_save_then_reload(self):
+        h=self.build(); marker=object(); self.ns['IPTVPlaylistSources']=marker
+        h.nav=6; h.activate()
+        self.assertIs(h.session.openWithCallback.call_args.args[1],marker)
+        self.ns['settings'].source.save=MagicMock()
+        h.playlist_selected('/etc/enigma2/iptvpl/playlists/test.m3u')
+        self.ns['settings'].source.save.assert_called_once()
+        self.assertEqual(self.ns['settings'].source.value,'/etc/enigma2/iptvpl/playlists/test.m3u')
+        self.ns['deferToThread'].assert_called_once()
+        self.assertEqual(h.category,'start')
+
     def test_skin_bounds_all_resolutions(self):
         h=self.build()
         for w,hh in [(1280,720),(1920,1080),(3840,2160)]:

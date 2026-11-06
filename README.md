@@ -67,7 +67,8 @@ są rysowane jednocześnie, niezależnie od wielkości listy.
 - **Telewizja / Filmy / Seriale**: pozycje pogrupowane według metadanych M3U.
 - **Moja lista**: ulubione dodawane i usuwane żółtym przyciskiem.
 - **Szukaj**: klawiatura ekranowa; wyszukiwanie nazw i grup w całej wczytanej liście.
-- **Ustawienia / MENU / niebieski**: zmiana źródła, odtwarzacza i trybu wolnego internetu.
+- **Playlisty**: przesyłanie z telefonu, import pliku z dekodera/USB, adres URL i wybór zapisanych plików.
+- **MENU / niebieski**: zmiana źródła, odtwarzacza i trybu wolnego internetu.
 
 Strzałki poruszają zaznaczenie w górnym menu, przyciskach panelu i rzędach.
 OK na pozycji odtwarza ją, na górnej zakładce otwiera kategorię.
@@ -94,6 +95,53 @@ Zmiana adresu strumienia w źródle może wymagać ponownego dodania go do ulubi
 
 Układ skaluje się do rozdzielczości GUI Enigma2. Rzeczywisty wygląd zależy
 od czcionek i możliwości obrazu dekodera; nie jest identyczny z wizualizacją.
+
+## Dodawanie playlist M3U
+
+W górnym menu wybierz **Playlisty**. Możesz też wejść w ustawienia
+(niebieski / MENU) i nacisnąć **żółty**.
+
+### Z telefonu przez przeglądarkę
+
+1. Wybierz **Prześlij M3U z telefonu**.
+2. Połącz telefon z tą samą siecią co dekoder.
+3. Otwórz adres pokazany na telewizorze, np. `http://192.168.4.128:8099`.
+4. Wpisz sześciocyfrowy kod z telewizora, wybierz plik i naciśnij **Wyślij playlistę**.
+5. Po potwierdzeniu naciśnij **zielony** na pilocie, aby wybrać przesłaną listę.
+
+Ekran importu musi pozostać otwarty. EXIT kończy odbieranie plików.
+Serwer działa tylko podczas otwartego ekranu; kod zmienia się przy każdym otwarciu.
+Po 10 błędnych kodach zamknij i otwórz ekran ponownie.
+Plik jest sprawdzany przed zapisaniem, limit wynosi 8 MiB.
+To przesyłanie w lokalnej sieci HTTP — port 8099 nie wymaga przekierowania na routerze.
+Nie trzeba wysyłać playlisty do zewnętrznego serwisu.
+
+### Z dekodera lub USB
+
+Wybierz **Wybierz plik z dekodera / USB**.
+Przeglądarka otwiera `/media/`; OK otwiera folder lub wybiera plik,
+a niebieski przechodzi do `/etc/enigma2/`.
+Obsługiwane rozszerzenia: `.m3u`, `.m3u8` zawierające listę adresów kanałów.
+Plik jest kopiowany do pamięci dekodera, więc po imporcie można odłączyć USB.
+
+### Przez adres URL
+
+Wybierz **Dodaj adres URL playlisty**, wpisz pełny URL HTTP/HTTPS
+na klawiaturze ekranowej i zatwierdź.
+Adres może zawierać parametry dostawcy; nie publikuj go, jeśli zawiera dane konta.
+
+### Zapisane playlisty
+
+Zaimportowane pliki znajdują się w `/etc/enigma2/iptvpl/playlists/`
+i są widoczne w menu **Playlisty**. Możesz przełączać je bez ponownego przesyłania.
+Powtórny import tworzy osobny plik i nie nadpisuje poprzedniego.
+Po wybraniu listy z głównego menu źródło jest zapisywane i wczytywane w tle.
+Wybór z ekranu ustawień wymaga dodatkowo zapisu zielonym przyciskiem;
+anulowanie ustawień nie przełącza aktywnego źródła.
+Zaimportowane, lecz niewybrane pliki pozostają w menu zapisanych playlist.
+Rozszerzenie M3U8 dotyczy list kanałów; pojedynczy manifest HLS z względnymi
+segmentami nie jest playlistą kanałów.
+Wymagany jest osobny test interfejsu na odbiorniku.
 
 ## Pilot
 
@@ -133,4 +181,5 @@ Nie deklarujemy przetestowania na fizycznym odbiorniku.
 
 Usuwanie: usuń katalog `/usr/lib/enigma2/python/Plugins/Extensions/IPTVPL`
 i uruchom ponownie GUI.
+
 
