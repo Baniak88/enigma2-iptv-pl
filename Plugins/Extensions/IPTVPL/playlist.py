@@ -36,11 +36,11 @@ def parse_m3u(text, base=''):
     return channels
 
 
-def load_playlist(source):
+def load_playlist(source, timeout=20):
     source = source.strip()
     if source.lower().startswith(('http://', 'https://')):
         request = Request(source, headers={'User-Agent': 'Enigma2-IPTVPL/1.0'})
-        with urlopen(request, timeout=20) as response:
+        with urlopen(request, timeout=timeout) as response:
             data = response.read(MAX_BYTES + 1)
             base = response.geturl()
     else:
