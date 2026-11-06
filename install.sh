@@ -8,7 +8,7 @@ base="https://raw.githubusercontent.com/Baniak88/enigma2-iptv-pl/main/Plugins/Ex
 dest="/usr/lib/enigma2/python/Plugins/Extensions/IPTVPL"
 stage=$(mktemp -d /tmp/iptvpl.XXXXXX)
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
-for file in __init__.py media.py catalogue.py playlist.py sources.py plugin.py; do
+for file in __init__.py media.py catalogue.py playlist.py sources.py plugin.py plugin.png; do
     if ! wget -O "$stage/$file" "$base/$file"; then
         echo "Pobieranie nieudane. Sprawdz siec i czy repozytorium jest publiczne."
         exit 1
@@ -27,11 +27,11 @@ if [ -d "$dest" ]; then
     echo "Kopia poprzedniej wersji: $backup"
 fi
 mkdir -p "$dest"
-for file in __init__.py media.py catalogue.py playlist.py sources.py plugin.py; do
+for file in __init__.py media.py catalogue.py playlist.py sources.py plugin.py plugin.png; do
     cp "$stage/$file" "$dest/$file"
     chmod 644 "$dest/$file"
 done
-echo "Zainstalowano IPTV PL 1.1.0."
+echo "Zainstalowano IPTV PL 1.1.1."
 echo "Uruchom ponownie GUI z menu dekodera, potem: Wtyczki > IPTV PL."
 
 

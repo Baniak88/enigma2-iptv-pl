@@ -17,7 +17,7 @@ from .media import media_kind, media_metadata, clean_title, vod_groups, vod_page
 from .playlist import load_playlist, load_artwork, take_playlist_preview, playlist_error_message, discard_playlist
 from .sources import PlaylistUpload, saved_playlists, import_local_playlist, validate_playlist_url
 
-VERSION = '1.1.0'
+VERSION = '1.1.1'
 
 config.plugins.iptvpl = ConfigSubsection()
 settings = config.plugins.iptvpl
@@ -646,8 +646,8 @@ def library_skin():
     for slot in range(8):
         x=336+(slot%4)*222;y=132+(slot//4)*254
         elements.append('<widget name="back%d" position="%d,%d" size="210,246" backgroundColor="#001C1C22" />'%(slot,x,y))
-        elements.append('<widget name="initial%d" position="%d,%d" size="160,176" font="Regular;29" halign="center" valign="center" foregroundColor="#007D7D8C" backgroundColor="#0024242C" />'%(slot,x+25,y+10))
-        elements.append('<widget name="poster%d" position="%d,%d" size="160,176" alphatest="blend" />'%(slot,x+25,y+10))
+        elements.append('<widget name="initial%d" position="%d,%d" size="118,176" font="Regular;29" halign="center" valign="center" foregroundColor="#007D7D8C" backgroundColor="#0024242C" />'%(slot,x+46,y+10))
+        elements.append('<widget name="poster%d" position="%d,%d" size="118,176" alphatest="blend" />'%(slot,x+46,y+10))
         elements.append('<widget name="name%d" position="%d,%d" size="194,52" font="Regular;22" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#001C1C22" />'%(slot,x+8,y+194))
         elements.append('<widget name="focus%d" position="%d,%d" size="210,3" backgroundColor="#00E50914" />'%(slot,x,y+248))
     elements.append('</screen>')
@@ -1303,7 +1303,10 @@ class IPTVHome(Screen):
                 self.render()
             return
         self.pending_vod = None
-        self.session.openWithCallback(self.vod_closed,IPTVLibrary,self.channels,kind,item=item)
+        try:
+            self.session.openWithCallback(self.vod_closed,IPTVLibrary,self.channels,kind,item=item)
+        except Exception:
+            report_ui_error(self.session)
 
     def vod_closed(self, *args):
         if not self.disposed:
@@ -1933,13 +1936,48 @@ class IPTVBrowser(Screen):
             self.selection_changed()
 
 
+def report_ui_error(session):
+    # Traceback frames only: exception messages may contain provider credentials.
+    import traceback
+    import sys
+    try:
+        with open('/tmp/iptvpl-error.log', 'w') as log:
+            log.write('IPTV PL %s\n' % VERSION)
+            for frame, line in traceback.walk_tb(sys.exc_info()[2]):
+                log.write('%s:%d in %s\n' % (frame.f_code.co_filename, line, frame.f_code.co_name))
+            error_type = sys.exc_info()[0]
+            log.write(error_type.__name__ if error_type else 'UnknownError')
+    except OSError:
+        pass
+    try:
+        session.open(MessageBox, 'Nie udało się otworzyć ekranu IPTV PL. Diagnostyka: /tmp/iptvpl-error.log', MessageBox.TYPE_ERROR)
+    except Exception:
+        pass
+
+
+def guarded_render(method):
+    def render(self, *args, **kwargs):
+        try:
+            return method(self, *args, **kwargs)
+        except Exception:
+            report_ui_error(self.session)
+    return render
+
+
+IPTVHome.render = guarded_render(IPTVHome.render)
+IPTVLibrary.render = guarded_render(IPTVLibrary.render)
+
+
 def main(session, **kwargs):
-    session.open(IPTVHome)
+    try:
+        session.open(IPTVHome)
+    except Exception:
+        report_ui_error(session)
 
 
 def Plugins(**kwargs):
     return [PluginDescriptor(name='IPTV PL', description='IPTV PL %s — TV, filmy i seriale' % VERSION,
-                             where=PluginDescriptor.WHERE_PLUGINMENU, fnc=main)]
+                             where=PluginDescriptor.WHERE_PLUGINMENU, icon='plugin.png', fnc=main)]
 
 
 

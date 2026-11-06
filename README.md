@@ -1,4 +1,4 @@
-# IPTV PL 1.1.0 — wtyczka Enigma2
+# IPTV PL 1.1.1 — wtyczka Enigma2
 
 Polski odtwarzacz IPTV z list M3U/M3U8. Obsługuje pliki lokalne, URL HTTP/HTTPS,
 grupy kanałów i odświeżanie listy bez blokowania interfejsu.
@@ -26,11 +26,11 @@ Repozytorium prywatne wymaga uwierzytelnionego pobierania.
 ## Instalacja z archiwum
 
 1. Zbuduj archiwum na komputerze: `python3 scripts/build.py`.
-2. Prześlij plik `dist/enigma2-plugin-extensions-iptvpl-1.1.0.tar.gz` do `/tmp` dekodera.
+2. Prześlij plik `dist/enigma2-plugin-extensions-iptvpl-1.1.1.tar.gz` do `/tmp` dekodera.
 3. Przez SSH na dekoderze wykonaj:
 
    ```sh
-   tar -xzf /tmp/enigma2-plugin-extensions-iptvpl-1.1.0.tar.gz -C /
+   tar -xzf /tmp/enigma2-plugin-extensions-iptvpl-1.1.1.tar.gz -C /
    ```
 
 4. Uruchom ponownie interfejs graficzny Enigma2 z menu dekodera.
@@ -292,7 +292,7 @@ anuluje automatyczne otwarcie, aby nie przerywać nowej czynności.
 Brak konfiguracji albo błąd źródła nie tworzy przykładowych bukietów.
 EXIT z widoku bukietów wraca do zakładki Telewizja.
 
-## Filmy i seriale — wersja 1.1.0
+## Filmy i seriale — wersja 1.1.1
 
 Wzorzec rozdzielania źródeł i nawigacji porównano z aplikacją
 [TV Player Android — Channel.java](https://github.com/Baniak88/tv-player-/blob/8ec195ad015559698e076ec8099f87c697fd4269/app/src/main/java/pl/tvplayer/Channel.java)
@@ -378,3 +378,9 @@ i uruchom ponownie GUI.
 
 
 
+
+### Projekt graficzny i diagnostyka
+
+![Koncepcja interfejsu](docs/ui-concept.jpg)
+
+Wizualizacja jest projektem, nie zrzutem z dekodera. Miniatury odcinków i opisy na niej są przykładowe; aktualna wersja używa danych M3U. Ikona plugin.png jest instalowana w menu wtyczek. Błędy otwierania biblioteki i renderowania zapisują stos wywołań bez treści adresów do /tmp/iptvpl-error.log. Nie oznacza to naprawienia każdej możliwej przyczyny awarii.
