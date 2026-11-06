@@ -4,6 +4,7 @@ import threading
 import time
 from urllib.parse import urljoin, urlsplit
 from urllib.request import Request, urlopen
+from .media import is_separator
 
 MAX_BYTES = 512 * 1024 * 1024
 MAX_LINE_BYTES = 1024 * 1024
@@ -45,8 +46,6 @@ def iter_m3u(lines, base=''):
             if stream_url(url):
                 name, attrs = pending or ('', {})
                 count += 1
-                if count > MAX_CHANNELS:
-                    raise PlaylistLimitError('Lista przekracza limit 2000000 pozycji. Podziel ją u dostawcy.')
                 channel = {'name': name or attrs.get('tvg-name') or 'Kanał %d' % count,
                            'url': url, 'group': group or 'Pozostałe'}
                 logo = attrs.get('tvg-logo', '').strip()
@@ -57,7 +56,12 @@ def iter_m3u(lines, base=''):
                             channel['logo'] = logo
                     except ValueError:
                         pass
-                yield channel
+                if not is_separator(channel):
+                    if count > MAX_CHANNELS:
+                        raise PlaylistLimitError('Lista przekracza limit 2000000 pozycji. Podziel ją u dostawcy.')
+                    yield channel
+                else:
+                    count -= 1
             pending = None
             group = ''
 
@@ -108,7 +112,7 @@ def load_playlist(source, timeout=20, progress=None, force=False):
     from .catalogue import CatalogueBuilder, load_cached_catalogue, save_cached_catalogue, source_fingerprint
     source = source.strip()
     if not force:
-        cached = load_cached_catalogue(source)
+        cached = load_cached_catalogue(source,progress)
         if cached is not None:
             return cached
     fingerprint = source_fingerprint(source)
@@ -165,7 +169,7 @@ def load_artwork(url):
     request = Request(url, headers={'User-Agent': 'Enigma2-IPTVPL/1.0'})
     with urlopen(request, timeout=5) as response:
         data = response.read(512 * 1024 + 1)
-    if len(data) > 512 * 1024 or not (data.startswith(b'\x89PNG\r\n\x1a\n') or data.startswith(b'\xff\xd8\xff')):
+    if len(data) > 512 * 1024 or not (data.startswith(b'\x89PNG\r\n\x1a\n') or data.startswith(b'\xff\xd8\xff') or data.startswith((b'GIF87a',b'GIF89a')) or (data.startswith(b'RIFF') and data[8:12]==b'WEBP')):
         raise ValueError('Unsupported or oversized artwork')
     path = None
     try:
@@ -259,6 +263,7 @@ def playlist_error_message(error):
     if isinstance(error, FileNotFoundError):
         return 'Nie znaleziono pliku playlisty na dekoderze.'
     return 'Nie udało się połączyć z serwerem playlisty. Sprawdź sieć i adres.'
+
 
 
 

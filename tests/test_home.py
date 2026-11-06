@@ -7,6 +7,8 @@ import unittest
 import xml.etree.ElementTree as ET
 from types import SimpleNamespace as NS
 from unittest.mock import MagicMock, patch
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from Plugins.Extensions.IPTVPL.media import media_kind, clean_title, memory_vod_items
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
@@ -36,6 +38,7 @@ class Ref:
 
 def channel(i,group='Sport',logo=''):
     c={'name':'Kanał %d'%i,'url':'https://example.com/%d'%i,'group':group}
+    if group=='Seriale': c['url']='https://example.com/series/%d.mp4'%i
     if logo: c['logo']=logo
     return c
 
@@ -49,7 +52,7 @@ class StreamingTests(unittest.TestCase):
             'discard_playlist':playlist.discard_playlist,'take_playlist_preview':playlist.take_playlist_preview,'playlist_error_message':playlist.playlist_error_message,
             'load_playlist':playlist.load_playlist,'load_artwork':playlist.load_artwork,
             'MoviePlayer':object,'IPTVPlayer':object,'IPTVNavigator':object,'eServiceReference':Ref,'configfile':MagicMock(),
-            'MessageBox':NS(TYPE_INFO=1),'IPTVSettings':object,'VirtualKeyBoard':object}
+            'MessageBox':NS(TYPE_INFO=1),'media_kind':media_kind,'clean_title':clean_title,'memory_vod_items':memory_vod_items,'IPTVLibrary':object,'IPTVSettings':object,'VirtualKeyBoard':object}
         exec(compile(ast.Module(body=nodes,type_ignores=[]),'<ui>','exec'),ns)
         self.ns=ns
         self.scale=ns['fit_skin']; ns['fit_skin']=lambda skin,**kw:skin
@@ -72,7 +75,8 @@ class StreamingTests(unittest.TestCase):
 
     def test_navigation_search_and_empty_results(self):
         h=self.build(); h.channels=[channel(1,'Sport'),channel(2,'Filmy')]; h.rebuild_rows()
-        h.nav=2; h.activate(); self.assertEqual(h.current()['group'],'Filmy')
+        h.nav=2; h.activate(); self.assertEqual(h.session.openWithCallback.call_args.args[3],'movies')
+        h.vod_closed(); self.assertEqual(h.category,'start')
         h.searched('SPORT'); self.assertEqual(h.current()['group'],'Sport')
         h.searched('missing'); self.assertEqual(h.rows,[])
         for direction in ('right','down','left','up'): h.move(direction)

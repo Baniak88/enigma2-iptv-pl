@@ -19,7 +19,7 @@ class CatalogueTests(unittest.TestCase):
                 for _ in range(66000): f.write(comment)
                 for i in range(6000):
                     group=('Sport','Filmy','Seriale')[i%3]
-                    f.write(('#EXTINF:-1 group-title="%s",Kanał %d\nhttps://example.com/live/%d\n'%(group,i,i)).encode())
+                    f.write(('#EXTINF:-1 group-title="%s",Kanał %d\nhttps://example.com/%s/%d\n'%(group,i,('live','movie','series')[i%3],i)).encode())
             self.assertGreater(path.stat().st_size,64*1024*1024)
             with path.open('rb') as handle:
                 class Response:
@@ -44,7 +44,7 @@ class CatalogueTests(unittest.TestCase):
                 self.assertLessEqual(sum(len(page) for page in result.pages.values()),64)
                 search=result.build_rows('start','KANAŁ 5999')
                 self.assertEqual(search[0][1][0]['name'],'Kanał 5999')
-                key=hashlib.sha256(b'https://example.com/live/5999').hexdigest()
+                key=hashlib.sha256(b'https://example.com/series/5999').hexdigest()
                 fav=result.build_rows('favourites',favourites=[key])
                 self.assertEqual(sum(len(items) for _,items in fav),1)
                 self.assertEqual(fav[0][1][0]['group'],'Seriale')

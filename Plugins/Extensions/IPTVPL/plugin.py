@@ -13,8 +13,11 @@ from Components.config import (config, configfile, ConfigSubsection, ConfigText,
                                ConfigSelection, ConfigYesNo, getConfigListEntry)
 from twisted.internet.threads import deferToThread
 from twisted.internet import reactor
+from .media import media_kind, media_metadata, clean_title, vod_groups, vod_page, series_seasons, movie_sequence, cached_artwork, memory_vod_items
 from .playlist import load_playlist, load_artwork, take_playlist_preview, playlist_error_message, discard_playlist
 from .sources import PlaylistUpload, saved_playlists, import_local_playlist, validate_playlist_url
+
+VERSION = '1.1.0'
 
 config.plugins.iptvpl = ConfigSubsection()
 settings = config.plugins.iptvpl
@@ -324,9 +327,9 @@ class PlaybackContext:
 
 def navigator_skin():
     elements = ['''<screen name="IPTVNavigator" position="center,center" size="1280,720" flags="wfNoBorder" backgroundColor="#00101010" title="Bukiety i kanały">
-      <eLabel position="44,24" size="1192,48" text="Bukiety i kanały" font="Regular;36" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
+      <widget name="heading" position="44,24" size="1192,48" font="Regular;36" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
       <widget name="status" position="44,82" size="1192,30" font="Regular;21" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
-      <eLabel position="44,121" size="370,26" text="BUKIETY" font="Regular;19" foregroundColor="#00AAAAAA" backgroundColor="#00101010" />
+      <widget name="left_heading" position="44,121" size="370,26" font="Regular;19" foregroundColor="#00AAAAAA" backgroundColor="#00101010" />
       <widget name="group" position="444,121" size="792,26" font="Regular;19" foregroundColor="#00AAAAAA" backgroundColor="#00101010" />
       <widget name="detail" position="44,608" size="1192,33" font="Regular;21" foregroundColor="#00CCCCCC" backgroundColor="#00101010" />
       <eLabel position="44,660" size="1192,35" text="Lewo / prawo: kolumna   CH+/−: strona   OK / zielony: wybierz   Czerwony / EXIT: wróć" font="Regular;21" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />''']
@@ -351,6 +354,8 @@ class IPTVNavigator(Screen):
         self.channel_index = context.index
         self.disposed = False
         self.busy = False
+        self['heading'] = Label(getattr(context,'title','Bukiety i kanały'))
+        self['left_heading'] = Label(getattr(context,'left_heading','BUKIETY'))
         self['status'] = Label('')
         self['group'] = Label('')
         self['detail'] = Label('')
@@ -445,7 +450,7 @@ class IPTVNavigator(Screen):
         items = rows[self.group_index][1] if rows else []
         self['group'].setText(rows[self.group_index][0][:65] if rows else 'KANAŁY')
         if not self.busy:
-            self['status'].setText('Bukiety %d–%d / %d   •   Pozycje %d–%d / %d' % (
+            self['status'].setText((getattr(self.context,'group_label','Bukiety')+' %d–%d / %d   •   Pozycje %d–%d / %d') % (
                 group_start+1 if rows else 0,min(group_start+12,len(rows)),len(rows),
                 channel_start+1 if items else 0,min(channel_start+12,len(items)),len(items)))
         playing = self.context.current()
@@ -453,13 +458,16 @@ class IPTVNavigator(Screen):
             gi, ci = group_start+slot, channel_start+slot
             group_text = '%s (%d)' % (rows[gi][0][:22],len(rows[gi][1])) if gi<len(rows) else ''
             channel = items[ci] if ci<len(items) else None
-            text = '%d. %s%s' % (ci+1,'> ' if playing and channel and playing['url']==channel['url'] else '',channel['name'][:65]) if channel else ''
+            text = '%d. %s%s' % (ci+1,'> ' if playing and channel and playing['url']==channel['url'] else '',clean_title(channel['name'])[:65]) if channel else ''
             self['item0_%d'%slot].setText(group_text)
+            if channel and getattr(self.context,'is_episodes',False):
+                meta=media_metadata(channel)
+                text='E%d  %s'%(meta['episode'],meta['display_title'][:60]) if meta['episode'] else meta['display_title'][:65]
             self['item1_%d'%slot].setText(text)
             for col, selected, valid in [(0,gi==self.group_index,gi<len(rows)),(1,ci==self.channel_index,channel is not None)]:
                 line=self['line%d_%d'%(col,slot)]
                 line.show() if valid and selected and self.focus==col else line.hide()
-        self['detail'].setText(items[self.channel_index]['name'][:100] if items else 'Brak pozycji w tej kategorii.')
+        self['detail'].setText(clean_title(items[self.channel_index]['name'])[:100] if items else 'Brak pozycji w tej kategorii.')
 
 
 def player_panel_skin():
@@ -502,7 +510,7 @@ class IPTVPlayerPanel(Screen):
     def refresh(self):
         context=self.player.playback
         channel=context.current()
-        self['name'].setText(channel['name'][:100] if channel else 'Brak kanału')
+        self['name'].setText(clean_title(channel['name'])[:100] if channel else 'Brak kanału')
         self['group'].setText('%s   •   %d / %d' % (context.rows[context.row][0],context.index+1,len(context.rows[context.row][1])) if channel else '')
         self.timer.start(5000,True)
 
@@ -623,6 +631,283 @@ def playback_reference(channel):
 
 
 
+def library_skin():
+    elements=['''<screen name="IPTVLibrary" position="center,center" size="1280,720" flags="wfNoBorder" backgroundColor="#00101010" title="Biblioteka">
+      <eLabel position="36,22" size="190,42" text="/ IPTV PL" font="Regular;28" foregroundColor="#00E50914" backgroundColor="#00101010" />
+      <widget name="title" position="336,22" size="876,45" font="Regular;36" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
+      <widget name="status" position="336,80" size="876,30" font="Regular;21" foregroundColor="#00BBBBBB" backgroundColor="#00101010" />
+      <eLabel position="36,120" size="270,28" text="KATEGORIE" font="Regular;18" foregroundColor="#00999999" backgroundColor="#00101010" />
+      <widget name="detail" position="36,645" size="1200,32" font="Regular;22" foregroundColor="#00CCCCCC" backgroundColor="#00101010" />
+      <eLabel position="36,692" size="1200,24" text="Strzałki: wybierz   OK: otwórz   CH+/−: strona   Żółty: szukaj   INFO: szczegóły   EXIT: wróć" font="Regular;19" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />''']
+    for row in range(12):
+        y=156+row*36
+        elements.append('<widget name="genre%d" position="36,%d" size="270,29" font="Regular;20" foregroundColor="#00DDDDDD" backgroundColor="#00101010" />'%(row,y))
+        elements.append('<widget name="genreline%d" position="36,%d" size="270,3" backgroundColor="#00E50914" />'%(row,y+30))
+    for slot in range(8):
+        x=336+(slot%4)*222;y=132+(slot//4)*254
+        elements.append('<widget name="back%d" position="%d,%d" size="210,246" backgroundColor="#001C1C22" />'%(slot,x,y))
+        elements.append('<widget name="initial%d" position="%d,%d" size="160,176" font="Regular;29" halign="center" valign="center" foregroundColor="#007D7D8C" backgroundColor="#0024242C" />'%(slot,x+25,y+10))
+        elements.append('<widget name="poster%d" position="%d,%d" size="160,176" alphatest="blend" />'%(slot,x+25,y+10))
+        elements.append('<widget name="name%d" position="%d,%d" size="194,52" font="Regular;22" halign="center" valign="center" foregroundColor="#00FFFFFF" backgroundColor="#001C1C22" />'%(slot,x+8,y+194))
+        elements.append('<widget name="focus%d" position="%d,%d" size="210,3" backgroundColor="#00E50914" />'%(slot,x,y+248))
+    elements.append('</screen>')
+    return ''.join(elements)
+
+
+class IPTVLibrary(Screen):
+    skin=library_skin()
+
+    def __init__(self,session,channels,kind,item=None):
+        self.skin=fit_skin(type(self).skin,fullscreen=True)
+        Screen.__init__(self,session)
+        self.channels=channels;self.kind=kind
+        self.groups=[];self.genre_index=0;self.group=None;self.query=''
+        self.index=0;self.items=[];self.total=0;self.offset=0;self.focus='groups'
+        self.busy=True;self.disposed=False;self.request=0;self.player_open=False
+        self.initial_item=item;self.current_series=None;self.episode_context=None;self.play_context=None
+        self.art_generation=0;self.art_busy=False;self.art_queue=[];self.art_failed_urls=set();self.art_loaded={}
+        self['title']=Label('Filmy' if kind=='movies' else 'Seriale')
+        self['status']=Label('Wczytywanie biblioteki…');self['detail']=Label('')
+        for row in range(12):
+            self['genre%d'%row]=Label('');self['genreline%d'%row]=Label('')
+        for slot in range(8):
+            for field in ('back','initial','name','focus'): self['%s%d'%(field,slot)]=Label('')
+            self['poster%d'%slot]=Pixmap()
+        self.picload=None
+        try:
+            decoder=ePicLoad();decoder.PictureData.get().append(self.art_decoded);self.picload=decoder
+        except (AttributeError,TypeError): pass
+        self['actions']=ActionMap(['OkCancelActions','DirectionActions','ColorActions','InfoActions','InfobarEPGActions','ChannelSelectBaseActions','InfobarChannelSelection'],
+            {'ok':self.choose,'green':self.choose,'cancel':self.close,'red':self.close,
+             'left':lambda:self.move('left'),'right':lambda:self.move('right'),
+             'up':lambda:self.move('up'),'down':lambda:self.move('down'),
+             'yellow':self.search,'info':self.info,'InfoPressed':self.info,
+             'nextBouquet':lambda:self.page(1),'prevBouquet':lambda:self.page(-1),
+             'ChannelPlusPressed':lambda:self.page(1),'ChannelMinusPressed':lambda:self.page(-1)},-4)
+        self.onFirstExecBegin.append(self.start)
+        self.onLayoutFinish.append(self.render)
+        self.onClose.append(self.cleanup)
+
+    def cleanup(self):
+        self.disposed=True;self.request+=1;self.art_generation+=1;self.art_queue=[]
+
+    def start(self):
+        self.busy=True;self.request+=1;token=self.request
+        self['status'].setText('Wczytywanie kategorii…')
+        deferToThread(vod_groups,self.channels,self.kind,self.query).addCallbacks(
+            lambda groups:self.groups_ready(groups,token),lambda failure:self.failed(failure,token))
+
+    def groups_ready(self,groups,token):
+        if self.disposed or token!=self.request:return
+        self.groups=groups;self.genre_index=0;self.group=None;self.index=0
+        self.load_page()
+
+    def load_page(self):
+        self.busy=True;self.request+=1;token=self.request
+        self.offset=(self.index//8)*8
+        self['status'].setText('Wczytywanie tytułów…')
+        deferToThread(vod_page,self.channels,self.kind,self.group,self.query,self.offset,8).addCallbacks(
+            lambda data:self.page_ready(data,token),lambda failure:self.failed(failure,token))
+
+    def page_ready(self,data,token):
+        if self.disposed or token!=self.request:return
+        self.total,self.items=data
+        self.busy=False;self.art_generation+=1;self.art_queue=[];self.art_loaded={}
+        self.index=min(self.index,max(0,self.total-1))
+        self.render(new_page=True)
+        if self.initial_item is not None:
+            item=self.initial_item;self.initial_item=None
+            meta=media_metadata(item)
+            self.show_episodes(dict(item,series_title=meta['series_title'],display_title=meta['series_title']))
+
+    def failed(self,failure,token):
+        if self.disposed or token!=self.request:return
+        self.busy=False
+        self['status'].setText(playlist_error_message(getattr(failure,'value',failure)))
+
+    def current(self):
+        index=self.index-self.offset
+        return self.items[index] if 0<=index<len(self.items) else None
+
+    def move(self,direction):
+        if self.busy:return
+        old=self.index
+        if self.focus=='groups':
+            if direction=='right':self.apply_group();return
+            elif direction in ('up','down'):
+                self.genre_index=max(0,min(len(self.groups)-1,self.genre_index+(-1 if direction=='up' else 1)))
+        elif direction=='left' and self.index%4==0:self.focus='groups'
+        else:
+            delta={'left':-1,'right':1,'up':-4,'down':4}[direction]
+            self.index=max(0,min(max(0,self.total-1),self.index+delta))
+        if self.index//8!=old//8:self.load_page()
+        else:self.render()
+
+    def page(self,delta):
+        if self.busy:return
+        if self.focus=='groups':
+            self.genre_index=max(0,min(max(0,len(self.groups)-1),self.genre_index+delta*12));self.render()
+        else:
+            self.index=max(0,min(max(0,self.total-1),self.index+delta*8));self.load_page()
+
+    def apply_group(self):
+        if not self.groups:return
+        group=self.groups[self.genre_index][1]
+        self.focus='grid'
+        if group!=self.group:
+            self.group=group;self.index=0;self.load_page()
+        else:self.render()
+
+    def choose(self):
+        if self.busy or self.player_open:return
+        if self.focus=='groups':self.apply_group();return
+        item=self.current()
+        if not item:return
+        if self.kind=='series':self.show_episodes(item)
+        else:
+            self.busy=True;self.request+=1;token=self.request
+            self['status'].setText('Otwieranie filmu…')
+            deferToThread(movie_sequence,self.channels,self.group,self.query).addCallbacks(
+                lambda seq:self.movie_ready(seq,token),lambda error:self.failed(error,token))
+
+    def movie_ready(self,sequence,token):
+        if self.disposed or token!=self.request:return
+        self.busy=False
+        context=PlaybackContext([(self.group or 'Filmy',sequence)],0,self.index)
+        context.title='Filmy';context.left_heading='KATEGORIE';context.group_label='Kategorie'
+        self.open_player(context)
+
+    def show_episodes(self,item):
+        self.current_series=item;self.busy=True;self.request+=1;token=self.request
+        self['status'].setText('Wczytywanie sezonów i odcinków…')
+        deferToThread(series_seasons,self.channels,item).addCallbacks(
+            lambda rows:self.episodes_ready(rows,token),lambda error:self.failed(error,token))
+
+    def episodes_ready(self,rows,token):
+        if self.disposed or token!=self.request:return
+        self.busy=False
+        if not rows:
+            self['status'].setText('Źródło nie zawiera odcinków tego serialu.');return
+        context=PlaybackContext(rows)
+        context.title=self.current_series['display_title'];context.left_heading='SEZONY';context.group_label='Sezony';context.is_episodes=True
+        self.episode_context=context
+        self.session.openWithCallback(self.episode_chosen,IPTVNavigator,context,focus='bouquets')
+
+    def episode_chosen(self,selection=None):
+        if selection is not None and not self.disposed:
+            self.episode_context.row,self.episode_context.index=selection
+            self.open_player(self.episode_context)
+
+    def open_player(self,context):
+        if self.player_open or not context.current():return
+        self.play_context=context;self.player_open=True
+        try:self.session.openWithCallback(self.player_closed,IPTVPlayer,playback_reference(context.current()),context)
+        except Exception:
+            self.player_open=False;self['status'].setText('Nie udało się otworzyć odtwarzacza.')
+
+    def player_closed(self,channel=None):
+        self.player_open=False
+        if self.disposed or channel is None:return
+        if self.kind=='movies':
+            self.index=self.play_context.index;self.load_page()
+        else:
+            self.session.openWithCallback(self.episode_chosen,IPTVNavigator,self.episode_context,focus='channels')
+
+    def search(self):
+        self.session.openWithCallback(self.searched,IPTVKeyboard,title='Szukaj filmów' if self.kind=='movies' else 'Szukaj seriali',text=self.query)
+
+    def searched(self,text=None):
+        if text is not None:
+            self.query=text.strip();self.start()
+
+    def info(self):
+        item=self.current()
+        if item:
+            text='%s\n\nKategoria: %s'%(item['display_title'],item['group'])
+            if self.kind=='series':text+='\nOdcinki: %d'%item['episode_count']
+            text+='\n\nSzczegółowy opis nie jest dostępny w tej liście M3U.'
+            self.session.open(MessageBox,text,MessageBox.TYPE_INFO)
+
+    def render(self,new_page=False):
+        if self.disposed:return
+        start=(self.genre_index//12)*12
+        for slot in range(12):
+            index=start+slot
+            text=''
+            if index<len(self.groups):
+                name,group,count=self.groups[index]
+                text='%s%s (%d)'%('> ' if group==self.group else '',name[:16],count)
+            self['genre%d'%slot].setText(text)
+            line=self['genreline%d'%slot]
+            line.show() if index==self.genre_index and self.focus=='groups' else line.hide()
+        if not self.busy:
+            label='seriali' if self.kind=='series' else 'filmów'
+            self['status'].setText('%d %s   •   %d–%d'%(self.total,label,self.offset+1 if self.total else 0,min(self.offset+8,self.total)))
+        self['title'].setText(('Filmy' if self.kind=='movies' else 'Seriale')+(' • '+self.group[:30] if self.group else ''))
+        selected=self.current()
+        self['detail'].setText((selected['display_title']+' • '+selected['group']+(' • %d odcinków'%selected['episode_count'] if self.kind=='series' else ''))[:110] if selected else 'Brak tytułów VOD w tej kategorii. Kanały filmowe na żywo znajdziesz w Telewizji.')
+        for slot in range(8):
+            item=self.items[slot] if slot<len(self.items) else None
+            for field in ('back','name','initial'):
+                widget=self['%s%d'%(field,slot)]
+                if item:widget.show()
+                else:widget.hide()
+            focus=self['focus%d'%slot]
+            focus.show() if item and self.focus=='grid' and slot==self.index-self.offset else focus.hide()
+            if item:self['name%d'%slot].setText(item['display_title'][:48])
+            if new_page:
+                self['poster%d'%slot].hide()
+                self['initial%d'%slot].setText('SERIAL' if self.kind=='series' else 'FILM')
+            elif slot in self.art_loaded:
+                self['initial%d'%slot].hide()
+        if self.picload is not None:
+            if new_page:
+                selected_slot=self.index-self.offset
+                slots=[selected_slot]+[slot for slot in range(len(self.items)) if slot!=selected_slot]
+                self.art_queue=[(slot,self.items[slot].get('logo',''),bool(settings.slowinternet.value and slot!=selected_slot)) for slot in slots if 0<=slot<len(self.items) and self.items[slot].get('logo')]
+            elif settings.slowinternet.value and selected and selected.get('logo') and self.index-self.offset not in self.art_loaded:
+                self.art_queue=[(self.index-self.offset,selected['logo'],False)]
+            self.next_art()
+
+    def next_art(self):
+        if self.art_busy or self.disposed:return
+        while self.art_queue:
+            slot,url,cache_only=self.art_queue.pop(0)
+            if url in self.art_failed_urls or slot in self.art_loaded:continue
+            self.art_busy=True;generation=self.art_generation
+            deferToThread(cached_artwork,url,cache_only=cache_only).addCallbacks(
+                lambda path,s=slot,u=url,g=generation:self.art_downloaded(path,s,u,g),
+                lambda error,u=url:self.art_failed(error,u))
+            break
+
+    def art_downloaded(self,path,slot,url,generation):
+        if path is None:
+            self.art_busy=False;self.next_art();return
+        if self.disposed or generation!=self.art_generation:
+            self.art_busy=False;self.next_art();return
+        try:
+            self.decoding=(slot,generation,url)
+            size=self['poster%d'%slot].instance.size()
+            self.picload.setPara((size.width(),size.height(),1,1,False,1,'#001C1C22'))
+            if self.picload.startDecode(path):self.art_failed(None,url)
+        except Exception:self.art_failed(None,url)
+
+    def art_decoded(self,*args):
+        try:
+            slot,generation,url=self.decoding
+            if not self.disposed and generation==self.art_generation:
+                data=self.picload.getData()
+                if data:
+                    self['poster%d'%slot].instance.setPixmap(data.__deref__() if hasattr(data,'__deref__') else data)
+                    self['poster%d'%slot].show();self['initial%d'%slot].hide();self.art_loaded[slot]=url
+        except Exception:pass
+        finally:self.art_busy=False;self.next_art()
+
+    def art_failed(self,failure,url):
+        self.art_failed_urls.add(url);self.art_busy=False;self.next_art()
+
+
+
 class IPTVHome(Screen):
     skin = streaming_skin()
 
@@ -632,6 +917,7 @@ class IPTVHome(Screen):
         self.channels = []
         self.rows = []
         self.pending_tv = False
+        self.pending_vod = None
         self.rows_loading = False
         self.category = 'start'
         self.query = ''
@@ -746,7 +1032,7 @@ class IPTVHome(Screen):
         last_update = [0.0]
         def progress(received, total):
             now = time.monotonic()
-            if received < 0 or now - last_update[0] >= 0.3:
+            if received == -1 or now - last_update[0] >= 0.3:
                 last_update[0] = now
                 reactor.callFromThread(self.download_progress, request, received, total)
         options = {'timeout': timeout, 'progress': progress}
@@ -760,7 +1046,7 @@ class IPTVHome(Screen):
         if self.disposed or request != self.request_id or not self.loading:
             return
         if received < 0:
-            text = 'Budowanie indeksów: %d pozycji…' % total
+            text = ('Naprawianie kategorii: %d pozycji…' if received == -3 else 'Budowanie indeksów: %d pozycji…') % total
         elif total and total > 0:
             text = 'Pobieranie: %.1f / %.1f MiB' % (received/1048576.0,total/1048576.0)
         else:
@@ -821,7 +1107,7 @@ class IPTVHome(Screen):
         rows = []
         if self.category == 'start' and not self.query:
             for key, title in [('live', 'Telewizja na żywo'), ('movies', 'Filmy'), ('series', 'Seriale')]:
-                subset = [c for c in channels if channel_category(c) == key]
+                subset = memory_vod_items(channels,'series') if key=='series' else [c for c in channels if channel_category(c) == key]
                 if subset:
                     rows.append((title, subset))
         else:
@@ -871,6 +1157,8 @@ class IPTVHome(Screen):
                 self.nav = max(0, min(7, self.nav + (-1 if direction == 'left' else 1)))
                 if self.nav != 1:
                     self.pending_tv = False
+                if self.nav not in (2,3):
+                    self.pending_vod = None
             elif direction == 'down':
                 self.area = 'hero'
         elif self.area == 'hero':
@@ -911,10 +1199,10 @@ class IPTVHome(Screen):
         if selected:
             self.featured = selected
             self['eyebrow'].setText('TELEWIZJA NA ŻYWO' if channel_category(selected) == 'live' else 'Z TWOJEJ LISTY M3U')
-            self['hero'].setText(selected['name'])
+            self['hero'].setText(selected.get('display_title') or clean_title(selected['name']))
             saved = ' • W mojej liście' if channel_key(selected) in self.favourites else ''
             self['summary'].setText('%s%s' % (selected['group'], saved))
-            self['action0'].setText('Odtwórz')
+            self['action0'].setText('Wybierz odcinki' if channel_category(selected)=='series' else 'Odtwórz')
             self['action1'].setText('Więcej informacji')
         else:
             self['eyebrow'].setText('TWOJA TELEWIZJA. TWÓJ WYBÓR.')
@@ -943,7 +1231,7 @@ class IPTVHome(Screen):
                 index = offset + col
                 if row and index < len(row[1]):
                     channel = row[1][index]
-                    widget.setText(channel['name'])
+                    widget.setText(channel.get('display_title') or clean_title(channel['name']))
                     widget.show()
                     if self.area == 'shelf' and row_index == self.row and index == self.column:
                         frame.show()
@@ -956,8 +1244,11 @@ class IPTVHome(Screen):
 
     def activate(self):
         if self.area == 'nav':
+            if self.nav not in (2,3): self.pending_vod=None
             if self.nav == 1:
                 self.open_tv()
+            elif self.nav in (2,3):
+                self.open_vod('movies' if self.nav == 2 else 'series')
             elif self.nav == 6:
                 self.session.openWithCallback(self.searched, IPTVKeyboard, title='Szukaj na swojej liście', text=self.query)
             elif self.nav == 7:
@@ -979,6 +1270,7 @@ class IPTVHome(Screen):
             self.play() if self.current() else self.playlists()
 
     def open_tv(self):
+        self.pending_vod = None
         self.category = 'live'
         self.query = ''
         self.pending_tv = True
@@ -990,9 +1282,33 @@ class IPTVHome(Screen):
             self.start()
 
     def open_pending_tv(self):
+        if self.pending_vod and not self.loading and not self.rows_loading and not self.disposed and self.channels:
+            kind = self.pending_vod
+            self.pending_vod = None
+            self.open_vod(kind)
+            return
         if self.pending_tv and not self.loading and not self.rows_loading and not self.disposed and self.channels:
             self.pending_tv = False
             self.bouquets()
+
+    def open_vod(self, kind, item=None):
+        self.pending_tv = False
+        self.category = kind
+        self.query = ''
+        if self.loading or self.rows_loading or not self.channels:
+            self.pending_vod = kind
+            if not self.loading and not self.rows_loading:
+                self.start()
+            else:
+                self.render()
+            return
+        self.pending_vod = None
+        self.session.openWithCallback(self.vod_closed,IPTVLibrary,self.channels,kind,item=item)
+
+    def vod_closed(self, *args):
+        if not self.disposed:
+            self.category='start';self.nav=0;self.query='';self.area='nav'
+            self.rebuild_rows()
 
     def searched(self, text=None):
         if text is not None:
@@ -1045,6 +1361,7 @@ class IPTVHome(Screen):
             self.close()
 
     def playlists(self):
+        self.pending_vod = None
         self.pending_tv = False
         self.session.openWithCallback(self.playlist_selected, IPTVPlaylistSources)
 
@@ -1059,6 +1376,7 @@ class IPTVHome(Screen):
             self.settings_closed(True)
 
     def setup(self):
+        self.pending_vod = None
         self.pending_tv = False
         self.session.openWithCallback(self.settings_closed, IPTVSettings)
 
@@ -1096,6 +1414,9 @@ class IPTVHome(Screen):
             self.open_playback(self.bouquet_context)
 
     def play(self):
+        if self.current() and channel_category(self.current())=='series':
+            self.open_vod('series',self.current())
+            return
         if self.current() and not self.player_open and not self.disposed:
             self.open_playback(self.playback_context())
 
@@ -1191,13 +1512,7 @@ class IPTVHome(Screen):
 
 
 def channel_category(channel):
-    """Use explicit playlist group names; no provider API or guessed accounts."""
-    group = channel.get('group', '').casefold()
-    if any(word in group for word in ('serial', 'series', 'sezon', 'season')):
-        return 'series'
-    if any(word in group for word in ('film', 'movie', 'vod', 'kino')):
-        return 'movies'
-    return 'live'
+    return media_kind(channel)
 
 
 class IPTVPlaylistSources(Screen):
@@ -1404,7 +1719,7 @@ class IPTVPlaylistUpload(Screen):
 class IPTVSettings(Screen, ConfigListScreen):
     skin = '''<screen name="IPTVSettings" position="center,center" size="1100,620" flags="wfNoBorder" backgroundColor="#00101010" title="Ustawienia">
       <eLabel position="35,25" size="1030,52" text="Ustawienia" font="Regular;38" foregroundColor="#00FFFFFF" backgroundColor="#00101010" />
-      <eLabel position="35,88" size="1030,30" text="Twoja playlista i preferencje odtwarzania" font="Regular;22" foregroundColor="#00AAAAAA" backgroundColor="#00101010" />
+      <eLabel position="35,88" size="1030,30" text="Twoja playlista i preferencje odtwarzania • wersja 1.1.0" font="Regular;22" foregroundColor="#00AAAAAA" backgroundColor="#00101010" />
       <widget name="config" position="35,145" size="1030,210" itemHeight="65" font="Regular;26" foregroundColor="#00FFFFFF" backgroundColor="#00202020" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#007A1020" scrollbarMode="showOnDemand" />
       <eLabel position="35,380" size="1030,24" text="PODPOWIEDŹ" font="Regular;18" foregroundColor="#00999999" backgroundColor="#00101010" />
       <widget name="help" position="35,418" size="1030,64" font="Regular;23" foregroundColor="#00CCCCCC" backgroundColor="#00101010" />
@@ -1623,8 +1938,9 @@ def main(session, **kwargs):
 
 
 def Plugins(**kwargs):
-    return [PluginDescriptor(name='IPTV PL', description='Odtwarzacz list IPTV M3U',
+    return [PluginDescriptor(name='IPTV PL', description='IPTV PL %s — TV, filmy i seriale' % VERSION,
                              where=PluginDescriptor.WHERE_PLUGINMENU, fnc=main)]
+
 
 
 

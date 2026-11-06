@@ -93,7 +93,7 @@ class CacheTests(unittest.TestCase):
             self.assertEqual(sum(len(items) for _,items in start),5)
             self.assertEqual(sum(len(items) for _,items in groups),5)
             self.assertTrue(trace)
-            self.assertTrue(all('group_summary' in sql for sql in trace))
+            self.assertTrue(all(('group_summary' in sql or 'series_summary' in sql) for sql in trace))
             result.close()
 
     def test_gzip_supported_and_decompressed_size_is_bounded(self):

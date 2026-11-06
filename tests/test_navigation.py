@@ -11,6 +11,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 TREE=ast.parse((ROOT/'Plugins/Extensions/IPTVPL/plugin.py').read_text())
 from Plugins.Extensions.IPTVPL import catalogue
+from Plugins.Extensions.IPTVPL.media import media_kind, clean_title
 
 class Screen(dict):
     def __init__(self,session):
@@ -50,7 +51,7 @@ class NavigationTests(unittest.TestCase):
         nodes=[n for n in TREE.body if isinstance(n,(ast.ClassDef,ast.FunctionDef)) and n.name in names]
         ns={'Screen':Screen,'Label':Label,'MoviePlayer':MoviePlayer,'IPTVPlayerPanel':object,
             'fit_skin':lambda skin,**kw:skin,'ActionMap':lambda contexts,actions,prio:actions,
-            'settings':NS(slowinternet=NS(value=True),player=NS(value='5001')),
+            'media_kind':media_kind,'clean_title':clean_title,'settings':NS(slowinternet=NS(value=True),player=NS(value='5001')),
             'eServiceReference':Ref,'deferToThread':MagicMock(),'MessageBox':NS(TYPE_ERROR=1)}
         exec(compile(ast.Module(body=nodes,type_ignores=[]),'<navigation>','exec'),ns)
         return ns

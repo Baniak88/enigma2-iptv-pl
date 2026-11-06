@@ -7,22 +7,18 @@ import tempfile
 import threading
 import time
 import json
+from .media import media_kind, media_metadata, is_separator
 
 MAX_IN_MEMORY = 5000
 MEMORY_BUDGET = 4 * 1024 * 1024
 
 
 def classify(channel):
-    group = channel.get('group', '').casefold()
-    if any(word in group for word in ('serial', 'series', 'sezon', 'season')):
-        return 'series'
-    if any(word in group for word in ('film', 'movie', 'vod', 'kino')):
-        return 'movies'
-    return 'live'
+    return media_kind(channel)
 
 
 CACHE_SECONDS = 24 * 60 * 60
-CACHE_SCHEMA = 2
+CACHE_SCHEMA = 3
 _cache_lock = threading.RLock()
 _open_paths = {}
 
@@ -63,7 +59,7 @@ def remove_unused(path):
             pass
 
 
-def load_cached_catalogue(source):
+def load_cached_catalogue(source,progress=None):
     # Prefer the newest valid snapshot, even after a USB drive is reconnected.
     candidates = []
     with _cache_lock:
@@ -71,7 +67,7 @@ def load_cached_catalogue(source):
             record = os.path.join(directory, cache_name(source))
             try:
                 meta, path = read_cache_record(record)
-                if meta.get('schema') != CACHE_SCHEMA or meta.get('fingerprint') != source_fingerprint(source):
+                if meta.get('schema') not in (2,CACHE_SCHEMA) or meta.get('fingerprint') != source_fingerprint(source):
                     continue
                 age = time.time() - meta['saved']
                 if not source.startswith('/') and not 0 <= age < CACHE_SECONDS:
@@ -79,10 +75,10 @@ def load_cached_catalogue(source):
                 count = meta['count']
                 if not isinstance(count, int) or count <= 0:
                     continue
-                candidates.append((meta['saved'],record,path,count))
+                candidates.append((meta['saved'],record,path,count,meta))
             except Exception:
                 continue
-        for _,record,path,count in sorted(candidates,reverse=True):
+        for _,record,path,count,meta in sorted(candidates,reverse=True):
             try:
                 from contextlib import closing
                 with closing(sqlite_module().connect('file:' + path + '?mode=ro', uri=True)) as connection:
@@ -90,16 +86,25 @@ def load_cached_catalogue(source):
                         continue
                     if connection.execute('SELECT 1 FROM group_summary LIMIT 1').fetchone() is None:
                         continue
+                    if meta['schema']==CACHE_SCHEMA:
+                        connection.execute('SELECT 1 FROM series_summary LIMIT 1').fetchall()
+                if meta['schema']==2:
+                    result=upgrade_catalogue(path,progress)
+                    save_cached_catalogue(source,result,meta['fingerprint'],meta['saved'])
+                    result.from_cache=True
+                    return result
                 result = ChannelCatalogue(path, count)
                 result.cache_record = record
                 result.from_cache = True
                 return result
-            except Exception:
+            except Exception as error:
+                if str(error).startswith('Brak miejsca') or getattr(error,'sqlite_errorcode',None)==13:
+                    raise
                 continue
     return None
 
 
-def save_cached_catalogue(source, result, fingerprint):
+def save_cached_catalogue(source, result, fingerprint, saved_at=None):
     if not getattr(result, 'is_disk_catalogue', False):
         with _cache_lock:
             for directory in cache_roots():
@@ -122,7 +127,7 @@ def save_cached_catalogue(source, result, fingerprint):
             except Exception:
                 previous = None
             meta = {'schema': CACHE_SCHEMA, 'file': os.path.basename(result.path),
-                    'saved': time.time(), 'count': len(result), 'fingerprint': fingerprint}
+                    'saved': time.time() if saved_at is None else saved_at, 'count': len(result), 'fingerprint': fingerprint}
             with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', prefix='source-', suffix='.tmp', dir=os.path.dirname(record), delete=False) as handle:
                 temp = handle.name
                 json.dump(meta, handle)
@@ -167,7 +172,8 @@ def as_channel(row):
 
 
 class CatalogueBuilder:
-    def __init__(self):
+    def __init__(self,force_disk=False):
+        self.force_disk=force_disk
         self.small = []
         self.memory = 0
         self.connection = None
@@ -177,10 +183,12 @@ class CatalogueBuilder:
         self.batch_bytes = 0
 
     def append(self, channel):
+        if is_separator(channel):
+            return
         self.count += 1
         if self.connection is None:
             self.memory += 256 + sum(len(value) * 4 for value in channel.values())
-        if self.connection is None and (self.count > MAX_IN_MEMORY or self.memory > MEMORY_BUDGET):
+        if self.connection is None and (self.force_disk or self.count > MAX_IN_MEMORY or self.memory > MEMORY_BUDGET):
             directory = cache_directory()
             handle = tempfile.NamedTemporaryFile(prefix='catalogue-', suffix='.sqlite', dir=directory, delete=False)
             self.path = handle.name
@@ -189,7 +197,7 @@ class CatalogueBuilder:
             self.connection.execute('PRAGMA journal_mode=OFF')
             self.connection.execute('PRAGMA synchronous=OFF')
             self.connection.execute('PRAGMA cache_size=-2048')
-            self.connection.execute('CREATE TABLE channels (id INTEGER PRIMARY KEY, name TEXT, url TEXT, group_name TEXT, logo TEXT, category TEXT, search TEXT, favourite TEXT)')
+            self.connection.execute('CREATE TABLE channels (id INTEGER PRIMARY KEY, name TEXT, url TEXT, group_name TEXT, logo TEXT, category TEXT, search TEXT, favourite TEXT, display_title TEXT, series_title TEXT, season INTEGER, episode INTEGER)')
             for item in self.small:
                 self.queue(item)
             self.small = []
@@ -200,9 +208,11 @@ class CatalogueBuilder:
 
     def queue(self, channel):
         name, url, group = channel['name'], channel['url'], channel['group']
-        self.batch.append((name, url, group, channel.get('logo', ''), classify(channel),
-                           (name + '\n' + group).casefold(), hashlib.sha256(url.encode('utf-8')).hexdigest()))
-        self.batch_bytes += 256 + sum(len(v) * 4 for v in self.batch[-1])
+        meta=media_metadata(channel)
+        self.batch.append((name, url, group, channel.get('logo', ''), meta['kind'],
+                           (name + '\n' + group).casefold(), hashlib.sha256(url.encode('utf-8')).hexdigest(),
+                           meta['display_title'],meta['series_title'],meta['season'],meta['episode']))
+        self.batch_bytes += 256 + sum(len(v) * 4 if isinstance(v,str) else 8 for v in self.batch[-1])
         if len(self.batch) >= 1024 or self.batch_bytes >= 2 * 1024 * 1024:
             self.flush()
 
@@ -211,7 +221,7 @@ class CatalogueBuilder:
             return
         if shutil.disk_usage(os.path.dirname(self.path)).free < 32 * 1024 * 1024:
             raise ValueError('Brak miejsca na katalog playlisty. Zwolnij pamięć dekodera lub podłącz dysk USB.')
-        self.connection.executemany('INSERT INTO channels (name,url,group_name,logo,category,search,favourite) VALUES (?,?,?,?,?,?,?)',self.batch)
+        self.connection.executemany('INSERT INTO channels (name,url,group_name,logo,category,search,favourite,display_title,series_title,season,episode) VALUES (?,?,?,?,?,?,?,?,?,?,?)',self.batch)
         self.batch = []
         self.batch_bytes = 0
 
@@ -224,7 +234,11 @@ class CatalogueBuilder:
         self.connection.execute('CREATE INDEX category_rows ON channels(category,id)')
         self.connection.execute('CREATE INDEX group_rows ON channels(group_name,id)')
         self.connection.execute('CREATE INDEX favourite_rows ON channels(favourite)')
-        self.connection.execute('CREATE TABLE group_summary AS SELECT group_name,category,COUNT(*) AS amount,MIN(id) AS first_id FROM channels GROUP BY group_name')
+        self.connection.execute('CREATE INDEX series_rows ON channels(category,group_name,series_title,season,episode)')
+        self.connection.execute('CREATE TABLE group_summary AS SELECT group_name,category,COUNT(*) AS amount,MIN(id) AS first_id FROM channels GROUP BY category,group_name')
+        self.connection.create_function('casefold',1,lambda value:value.casefold())
+        self.connection.execute("CREATE TABLE series_summary AS SELECT group_name,series_title,MIN(id) AS first_id,COUNT(*) AS amount,MIN(NULLIF(logo,'')) AS logo,casefold(series_title||char(10)||group_name) AS search FROM channels WHERE category='series' GROUP BY group_name,series_title")
+        self.connection.execute('CREATE INDEX series_groups ON series_summary(group_name,first_id)')
         self.connection.commit()
         self.connection.close()
         self.connection = None
@@ -248,7 +262,8 @@ class CatalogueBuilder:
 
 class ChannelPage:
     """A sequence view of a SQL result; at most 64 channel dicts are cached."""
-    def __init__(self, catalogue, where, params, count):
+    def __init__(self, catalogue, where, params, count, order='id'):
+        self.order=order
         self.catalogue, self.where, self.params = catalogue, where, tuple(params)
         self.count = count
 
@@ -261,7 +276,7 @@ class ChannelPage:
         if not 0 <= index < self.count:
             raise IndexError(index)
         start = (index // 16) * 16
-        page = self.catalogue.read_page(self.where, self.params, start)
+        page = self.catalogue.read_page(self.where, self.params, start,self.order)
         return page[index - start]
 
     def position_of(self, channel):
@@ -270,11 +285,35 @@ class ChannelPage:
             found = connection.execute('SELECT id FROM channels WHERE '+self.where+' AND favourite=? ORDER BY id LIMIT 1',self.params+(key,)).fetchone()
             if found is None:
                 return None
+            if self.order=='episode,id':
+                number=connection.execute('SELECT episode FROM channels WHERE id=?',found).fetchone()[0]
+                return connection.execute('SELECT COUNT(*) FROM channels WHERE '+self.where+' AND (episode<? OR (episode=? AND id<?))',self.params+(number,number,found[0])).fetchone()[0]
             return connection.execute('SELECT COUNT(*) FROM channels WHERE '+self.where+' AND id<?',self.params+(found[0],)).fetchone()[0]
 
     def __iter__(self):
         for index in range(self.count):
             yield self[index]
+
+
+class SeriesCards:
+    def __init__(self,catalogue,count):
+        self.catalogue=catalogue;self.count=count;self.start=-1;self.page=[]
+    def __len__(self):return self.count
+    def __getitem__(self,index):
+        if index<0:index+=self.count
+        if not 0<=index<self.count:raise IndexError(index)
+        start=(index//16)*16
+        if self.start!=start:
+            _,self.page=self.catalogue.vod_page('series',offset=start,limit=16)
+            self.start=start
+        return self.page[index-start]
+    def __iter__(self):
+        for index in range(self.count):yield self[index]
+    def position_of(self,channel):
+        title=channel.get('series_title') or media_metadata(channel)['series_title']
+        with self.catalogue.connect() as connection:
+            row=connection.execute('SELECT first_id FROM series_summary WHERE group_name=? AND series_title=?',(channel['group'],title)).fetchone()
+            return connection.execute('SELECT COUNT(*) FROM series_summary WHERE first_id<?',row).fetchone()[0] if row else None
 
 
 class ChannelCatalogue:
@@ -300,13 +339,15 @@ class ChannelCatalogue:
         from contextlib import closing
         return closing(sqlite_module().connect('file:' + self.path + '?mode=ro', uri=True))
 
-    def read_page(self, where, params, start):
-        key = (where, tuple(params), start)
+    def read_page(self, where, params, start, order='id'):
+        if order not in ('id','episode,id'):
+            raise ValueError('Invalid page order')
+        key = (where, tuple(params), start,order)
         if key in self.pages:
             self.pages.move_to_end(key)
             return self.pages[key]
         with self.connect() as connection:
-            rows = connection.execute('SELECT name,url,group_name,logo FROM channels WHERE ' + where + ' ORDER BY id LIMIT 16 OFFSET ?', tuple(params) + (start,)).fetchall()
+            rows = connection.execute('SELECT name,url,group_name,logo FROM channels WHERE ' + where + ' ORDER BY '+order+' LIMIT 16 OFFSET ?', tuple(params) + (start,)).fetchall()
         page = [as_channel(row) for row in rows]
         self.pages[key] = page
         while len(self.pages) > 4:
@@ -326,19 +367,66 @@ class ChannelCatalogue:
         with self.connect() as connection:
             if category == 'start' and not query:
                 counts = dict(connection.execute('SELECT category,SUM(amount) FROM group_summary GROUP BY category'))
+                counts['series']=connection.execute('SELECT COUNT(*) FROM series_summary').fetchone()[0]
                 rows = []
                 for key, title in [('live','Telewizja na żywo'),('movies','Filmy'),('series','Seriale')]:
                     if counts.get(key):
-                        rows.append((title, ChannelPage(self, 'category=?', [key], counts[key])))
+                        rows.append((title, SeriesCards(self,counts[key]) if key=='series' else ChannelPage(self, 'category=?', [key], counts[key])))
                 return rows
             if not query and category != 'favourites':
                 if category in ('live','movies','series'):
                     groups = connection.execute('SELECT group_name,amount,first_id FROM group_summary WHERE category=? ORDER BY first_id',(category,)).fetchall()
                 else:
-                    groups = connection.execute('SELECT group_name,amount,first_id FROM group_summary ORDER BY first_id').fetchall()
+                    groups = connection.execute('SELECT group_name,SUM(amount),MIN(first_id) FROM group_summary GROUP BY group_name ORDER BY MIN(first_id)').fetchall()
             else:
                 groups = connection.execute('SELECT group_name,COUNT(*),MIN(id) FROM channels WHERE '+where+' GROUP BY group_name ORDER BY MIN(id)', params).fetchall()
         return [(group,ChannelPage(self,where+' AND group_name=?',params+[group],count)) for group,count,_ in groups]
+
+    def vod_groups(self,kind,query=''):
+        with self.connect() as connection:
+            if kind=='series':
+                where='instr(search,?)>0' if query else '1'
+                params=(query.casefold(),) if query else ()
+                rows=connection.execute('SELECT group_name,COUNT(*),MIN(first_id) FROM series_summary WHERE '+where+' GROUP BY group_name ORDER BY MIN(first_id)',params).fetchall()
+            elif not query:
+                rows=connection.execute('SELECT group_name,amount,first_id FROM group_summary WHERE category=? ORDER BY first_id',(kind,)).fetchall()
+            else:
+                rows=connection.execute('SELECT group_name,COUNT(*),MIN(id) FROM channels WHERE category=? AND instr(search,?)>0 GROUP BY group_name ORDER BY MIN(id)',(kind,query.casefold())).fetchall()
+        return [('Wszystkie',None,sum(row[1] for row in rows))]+[(group,group,count) for group,count,_ in rows]
+
+    def vod_page(self,kind,group=None,query='',offset=0,limit=8):
+        if kind not in ('movies','series'):
+            raise ValueError('Invalid VOD kind')
+        clauses=[];params=[]
+        if group is not None:
+            clauses.append('group_name=?');params.append(group)
+        if query:
+            clauses.append('instr(search,?)>0');params.append(query.casefold())
+        extra=' AND '.join(clauses) or '1'
+        with self.connect() as connection:
+            if kind=='series':
+                count=connection.execute('SELECT COUNT(*) FROM series_summary WHERE '+extra,params).fetchone()[0]
+                rows=connection.execute('SELECT s.series_title,c.url,s.group_name,COALESCE(s.logo,\'\'),s.amount FROM series_summary s JOIN channels c ON c.id=s.first_id WHERE '+extra.replace('group_name','s.group_name').replace('instr(search','instr(s.search')+' ORDER BY s.first_id LIMIT ? OFFSET ?',params+[min(limit,32),offset]).fetchall()
+                return count,[dict(name=title,url=url,group=genre,logo=logo or '',kind='series',series_title=title,display_title=title,episode_count=amount) for title,url,genre,logo,amount in rows]
+            where='category=? AND '+extra;values=[kind]+params
+            count=connection.execute('SELECT COUNT(*) FROM channels WHERE '+where,values).fetchone()[0]
+            rows=connection.execute('SELECT name,url,group_name,logo,display_title FROM channels WHERE '+where+' ORDER BY id LIMIT ? OFFSET ?',values+[min(limit,32),offset]).fetchall()
+        return count,[dict(as_channel(row[:4]),kind='movies',display_title=row[4]) for row in rows]
+
+    def series_seasons(self,group,title):
+        where="category='series' AND group_name=? AND series_title=?"
+        with self.connect() as connection:
+            rows=connection.execute('SELECT season,COUNT(*) FROM channels WHERE '+where+' GROUP BY season ORDER BY season',(group,title)).fetchall()
+        return [('Sezon %d'%season,ChannelPage(self,where+' AND season=?',(group,title,season),count,order='episode,id')) for season,count in rows]
+
+    def movie_sequence(self,group=None,query=''):
+        where="category='movies'";params=[]
+        if group is not None: where+=' AND group_name=?';params.append(group)
+        if query: where+=' AND instr(search,?)>0';params.append(query.casefold())
+        with self.connect() as connection:
+            count=connection.execute('SELECT COUNT(*) FROM channels WHERE '+where,params).fetchone()[0]
+        return ChannelPage(self,where,params,count)
+
 
     def close(self):
         if not self.closed:
@@ -364,3 +452,22 @@ class ChannelCatalogue:
         self.close()
 
 
+
+
+
+def upgrade_catalogue(path, progress=None):
+    from contextlib import closing
+    builder=CatalogueBuilder(force_disk=True)
+    try:
+        with closing(sqlite_module().connect('file:'+path+'?mode=ro',uri=True)) as connection:
+            cursor=connection.execute('SELECT name,url,group_name,logo FROM channels ORDER BY id')
+            while True:
+                rows=cursor.fetchmany(256)
+                if not rows: break
+                for row in rows: builder.append(as_channel(row))
+                if progress: progress(-3,builder.count)
+        if not builder.count: raise ValueError('Brak pozycji po sprawdzeniu listy.')
+        return builder.finish()
+    except Exception:
+        builder.abort()
+        raise

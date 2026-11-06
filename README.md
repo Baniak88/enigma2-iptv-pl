@@ -1,4 +1,4 @@
-# IPTV PL — wtyczka Enigma2
+# IPTV PL 1.1.0 — wtyczka Enigma2
 
 Polski odtwarzacz IPTV z list M3U/M3U8. Obsługuje pliki lokalne, URL HTTP/HTTPS,
 grupy kanałów i odświeżanie listy bez blokowania interfejsu.
@@ -26,11 +26,11 @@ Repozytorium prywatne wymaga uwierzytelnionego pobierania.
 ## Instalacja z archiwum
 
 1. Zbuduj archiwum na komputerze: `python3 scripts/build.py`.
-2. Prześlij plik `dist/enigma2-plugin-extensions-iptvpl-1.0.0.tar.gz` do `/tmp` dekodera.
+2. Prześlij plik `dist/enigma2-plugin-extensions-iptvpl-1.1.0.tar.gz` do `/tmp` dekodera.
 3. Przez SSH na dekoderze wykonaj:
 
    ```sh
-   tar -xzf /tmp/enigma2-plugin-extensions-iptvpl-1.0.0.tar.gz -C /
+   tar -xzf /tmp/enigma2-plugin-extensions-iptvpl-1.1.0.tar.gz -C /
    ```
 
 4. Uruchom ponownie interfejs graficzny Enigma2 z menu dekodera.
@@ -65,7 +65,8 @@ są rysowane jednocześnie, niezależnie od wielkości listy.
 
 - **Start**: półki telewizji, filmów i seriali.
 - **Telewizja + OK**: bezpośrednio otwiera bukiety tematyczne TV i kanały w dwóch kolumnach.
-- **Filmy / Seriale**: pozycje pogrupowane według metadanych M3U.
+- **Filmy**: osobny katalog VOD z kategoriami i pionowymi okładkami.
+- **Seriale**: tytuły seriali, następnie sezony i odcinki.
 - **Moja lista**: ulubione dodawane i usuwane żółtym przyciskiem.
 - **Bukiety**: pełny widok grup playlisty i kanałów z przewijaniem stronami.
 - **Szukaj**: klawiatura ekranowa; wyszukiwanie nazw i grup w całej wczytanej liście.
@@ -84,14 +85,19 @@ bez okna błędu. Nieudane odświeżenie zachowuje już wczytaną listę.
 Po zapisaniu zmienionego źródła poprzednia lista jest usuwana z ekranu.
 
 **Grafiki i opisy:** ekran korzysta z nazw, grup oraz opcjonalnego `tvg-logo`.
-Grafika wskazanej pozycji jest pobierana pojedynczo w tle (PNG/JPEG, do 512 KiB,
+Grafika wskazanej pozycji jest pobierana pojedynczo w tle (PNG/JPEG/GIF/WebP (zależnie od dekodera), do 512 KiB,
 limit odczytu 5 sekund), a plik tymczasowy jest usuwany po dekodowaniu.
 Wolny internet wyłącza pobieranie grafik. Brak grafiki oznacza kartę z nazwą.
 Nie ma fikcyjnych plakatów, roczników, ocen ani opisów filmów z wizualizacji.
 Nie dodaje to dostępu do katalogu Netflix ani Xtream API.
 
-Kategorie: nazwy grup zawierające serial/series/sezon/season trafiają do seriali,
-film/movie/vod/kino do filmów, pozostałe do telewizji.
+Typ materiału jest ustalany przede wszystkim z adresu: `/live/`, `.ts` i HLS to TV;
+`/movie/`, `/movies/`, `/vod/` i pliki wideo to filmy; `/series/` oraz oznaczenia
+odcinków w plikach wideo to seriale. Nazwa grupy jest tylko ostrożnym uzupełnieniem.
+Kanały takie jak Canal+ Premium w grupie Filmowe pozostają w TV.
+Separatory typu `##### PL FILMOWE #####` i rozpoznane informacyjne sloty serialowe
+dostawcy nie są pozycjami do odtwarzania.
+
 Moja lista zapisuje skróty adresów pozycji w ustawieniach — bez dodatkowych kopii URL.
 Zmiana adresu strumienia w źródle może wymagać ponownego dodania go do ulubionych.
 
@@ -286,6 +292,42 @@ anuluje automatyczne otwarcie, aby nie przerywać nowej czynności.
 Brak konfiguracji albo błąd źródła nie tworzy przykładowych bukietów.
 EXIT z widoku bukietów wraca do zakładki Telewizja.
 
+## Filmy i seriale — wersja 1.1.0
+
+Wzorzec rozdzielania źródeł i nawigacji porównano z aplikacją
+[TV Player Android — Channel.java](https://github.com/Baniak88/tv-player-/blob/8ec195ad015559698e076ec8099f87c697fd4269/app/src/main/java/pl/tvplayer/Channel.java)
+oraz jej widokami TV i seriali. Kod Androida nie jest uruchamiany na Enigma2.
+
+**Filmy** otwierają oddzielny ekran: kategorie po lewej, siatka ośmiu tytułów po prawej.
+Kategorie pochodzą z playlisty. OK na kategorii filtruje siatkę, a OK na filmie go odtwarza.
+Lewo/prawo przełącza kolumny i karty; CH+/− przewija stronami.
+Żółty otwiera wyszukiwanie, INFO pokazuje nazwę i kategorię, EXIT wraca na Start.
+Nie są dodawane fikcyjne opisy, oceny ani daty.
+
+**Seriale** pokazują pojedyncze tytuły z liczbą odcinków, a nie każdy odcinek jako osobny serial.
+OK otwiera sezony i odcinki, posortowane liczbowo (np. E2 przed E10).
+Rozpoznawane są nazwy typu `S01E02`, `1x02`, `Sezon 1 Odcinek 2`.
+Wspólny tytuł jest zachowywany osobno dla grup dostawcy, aby nie mieszać wersji językowych.
+Brak oznaczeń sezonu/odcinka w M3U ogranicza możliwość grupowania — wtyczka nie zgaduje
+nieudostępnionych danych ani nie zamienia numerowanych kanałów TV w odcinki.
+Po wyjściu z odtwarzania serialu wraca lista odcinków, a następnie katalog seriali.
+
+**Okładki** pochodzą z `tvg-logo`. Są pobierane i dekodowane pojedynczo w tle,
+z limitem 512 KiB i lokalną pamięcią maksymalnie 128 obrazów.
+Brak obrazu albo nieobsługiwany format daje kartę z czytelną nazwą.
+W trybie Wolny internet pobierana jest grafika wybranego tytułu;
+pozostałe mogą być odczytane z istniejącego cache, bez dodatkowego pobierania.
+Obsługa formatu obrazu zależy również od biblioteki ePicLoad obrazu Enigma2.
+
+**Naprawa zapisanej listy:** starszy katalog SQLite jest przeliczany lokalnie na nowy podział
+TV/VOD i indeks seriali. Nie trzeba naciskać odświeżania ani ponownie pobierać M3U.
+Ten jednorazowy etap może potrwać przy bardzo dużej liście; postęp jest widoczny.
+Podczas migracji potrzebne jest miejsce na poprawiony katalog obok poprzedniego;
+stary plik jest usuwany dopiero po udanym zapisaniu nowego.
+
+Źródłem pozostaje M3U. Nie dodaje to konta, katalogu Netflix ani importu Xtream API.
+Testy na rzeczywistym dekoderze nadal są wymagane, zwłaszcza dla obrazów i kodeków VOD.
+
 ## Pilot
 
 - **Strzałki**: wybór zakładki, przycisku, pozycji lub grupy.
@@ -324,6 +366,7 @@ Nie deklarujemy przetestowania na fizycznym odbiorniku.
 
 Usuwanie: usuń katalog `/usr/lib/enigma2/python/Plugins/Extensions/IPTVPL`
 i uruchom ponownie GUI.
+
 
 
 
