@@ -9,7 +9,7 @@ from Components.Label import Label
 from Components.MenuList import MenuList
 from Components.ConfigList import ConfigListScreen
 from Components.config import (config, configfile, ConfigSubsection, ConfigText,
-                               ConfigSelection, getConfigListEntry)
+                               ConfigSelection, ConfigYesNo, getConfigListEntry)
 from twisted.internet.threads import deferToThread
 from .playlist import load_playlist
 
@@ -20,21 +20,24 @@ settings.player = ConfigSelection(default='4097', choices=[('4097', 'GStreamer (
                                   ('5001', 'ServiceApp / exteplayer3 (5001)'),
                                   ('5002', 'ServiceApp / gstplayer (5002)')])
 
+settings.slowinternet = ConfigYesNo(default=False)
+
 
 class IPTVSettings(Screen, ConfigListScreen):
     skin = '''<screen name="IPTVSettings" position="center,center" size="1100,620" flags="wfNoBorder" backgroundColor="#00F2F2F7" title="Ustawienia">
       <eLabel position="35,25" size="1030,55" text="Ustawienia" font="Regular;40" foregroundColor="#001C1C1E" backgroundColor="#00F2F2F7" />
       <eLabel position="35,95" size="1030,40" text="TWOJA TELEWIZJA" font="Regular;21" foregroundColor="#00636366" backgroundColor="#00F2F2F7" />
-      <widget name="config" position="35,145" size="1030,185" itemHeight="65" font="Regular;26" foregroundColor="#001C1C1E" backgroundColor="#00FFFFFF" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00007AFF" scrollbarMode="showOnDemand" />
+      <widget name="config" position="35,145" size="1030,210" itemHeight="65" font="Regular;26" foregroundColor="#001C1C1E" backgroundColor="#00FFFFFF" foregroundColorSelected="#00FFFFFF" backgroundColorSelected="#00007AFF" scrollbarMode="showOnDemand" />
       <eLabel position="35,360" size="1030,105" text="Wpisz adres listy M3U lub ścieżkę pliku.
-Domyślny odtwarzacz jest zalecany dla większości kanałów." font="Regular;24" foregroundColor="#00636366" backgroundColor="#00F2F2F7" />
+Wolny internet: buforowanie GStreamer i dłuższe oczekiwanie na listę." font="Regular;24" foregroundColor="#00636366" backgroundColor="#00F2F2F7" />
       <widget name="help" position="35,515" size="1030,75" font="Regular;23" foregroundColor="#00007AFF" backgroundColor="#00F2F2F7" />
     </screen>'''
 
     def __init__(self, session):
         Screen.__init__(self, session)
         ConfigListScreen.__init__(self, [getConfigListEntry('Lista kanałów', settings.source),
-                                      getConfigListEntry('Odtwarzanie', settings.player)], session=session)
+                                      getConfigListEntry('Odtwarzanie', settings.player),
+                                      getConfigListEntry('Wolny internet (GStreamer)', settings.slowinternet)], session=session)
         self['help'] = Label('OK: edycja / klawiatura ekranowa   Zielony: zapisz   Czerwony: anuluj')
         self['actions'] = ActionMap(['SetupActions', 'ColorActions'],
                                    {'save': self.save, 'green': self.save,
@@ -85,6 +88,7 @@ class IPTVBrowser(Screen):
         self.channels = []
         self.group = None
         self.loading = False
+        self.player_open = False
         self.disposed = False
         self['status'] = Label('')
         self['channels'] = MenuList([])
@@ -108,7 +112,8 @@ class IPTVBrowser(Screen):
         self.loading = True
         self['status'].setText('Odświeżanie kanałów…')
         self['detail'].setText('Pobieranie listy…')
-        deferToThread(load_playlist, settings.source.value).addCallbacks(self.loaded, self.failed)
+        timeout = 60 if settings.slowinternet.value else 20
+        deferToThread(load_playlist, settings.source.value, timeout=timeout).addCallbacks(self.loaded, self.failed)
 
     def loaded(self, channels):
         self.loading = False
@@ -160,12 +165,29 @@ class IPTVBrowser(Screen):
             self.reload()
 
     def play(self):
+        if self.player_open or self.disposed:
+            return
         current = self['channels'].getCurrent()
         if current:
             channel = current[1]
-            reference = eServiceReference(int(settings.player.value), 0, channel['url'])
+            # Slow mode uses native GStreamer buffering, independent of ServiceApp.
+            service_type = 4097 if settings.slowinternet.value else int(settings.player.value)
+            reference = eServiceReference(service_type, 0, channel['url'])
+            if settings.slowinternet.value:
+                # eServiceMP3 BUFFERING_ENABLED; no progressive disk download.
+                reference.setData(7, 1)
             reference.setName(channel['name'])
-            self.session.open(MoviePlayer, reference)
+            self.player_open = True
+            try:
+                self.session.openWithCallback(self.player_closed, MoviePlayer, reference)
+            except Exception:
+                self.player_open = False
+                self.session.open(MessageBox, 'Nie udało się otworzyć odtwarzacza. Sprawdź wybrany odtwarzacz w ustawieniach.', MessageBox.TYPE_ERROR)
+
+    def player_closed(self, *args):
+        self.player_open = False
+        if not self.disposed:
+            self.selection_changed()
 
 
 def main(session, **kwargs):
