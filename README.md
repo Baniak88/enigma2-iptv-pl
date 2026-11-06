@@ -202,8 +202,8 @@ Nie jest tworzona lista słowników dla całego dużego katalogu.
 
 Katalog jest zapisywany w `.iptvpl-cache` na zamontowanym `/media/hdd` albo `/media/usb`;
 w przeciwnym razie w `/etc/enigma2/iptvpl/catalogue-cache`.
-Sprawdzane jest wolne miejsce. Katalog jest usuwany po zamknięciu aplikacji, zmianie źródła
-lub odrzuceniu wyniku. Niewykorzystane potwierdzenie z telefonu wygasa po 120 sekundach.
+Sprawdzane jest wolne miejsce. Po zamknięciu aplikacji i zmianie źródła zwalniane są uchwyty katalogu.
+Poprawnie zapisany katalog pozostaje na nośniku jako pamięć podręczna. Niewykorzystane potwierdzenie z telefonu wygasa po 120 sekundach.
 Pliki importowane przez użytkownika pozostają w folderze zapisanych playlist.
 Duży katalog może zajmować więcej miejsca na dysku niż surowa lista M3U.
 
@@ -244,6 +244,34 @@ Mapowania obejmują standardowe akcje Enigma2 i nazwy przycisków OpenATV.
 Różnice w mapie klawiszy konkretnego obrazu mogą wymagać dopasowania;
 pełna weryfikacja odtwarzania nadal wymaga odbiornika.
 
+## Szybsze kolejne uruchomienia
+
+Duże katalogi SQLite są zapisywane i używane ponownie, bez ponownego pobierania
+ani indeksowania. Kopia listy z URL jest ważna przez **24 godziny**.
+Dla pliku lokalnego porównywane są rozmiar i czas modyfikacji.
+Uszkodzona, niezgodna wersją lub nieaktualna kopia powoduje ponowny import.
+Metadane cache nie zapisują adresu źródła ani hasła; nazwa klucza jest skrótem SHA-256.
+Same adresy kanałów w bazie mogą zawierać dane konta, więc katalog należy chronić jak playlistę.
+
+**Zielony na ekranie głównym** wymusza pełne pobranie/odświeżenie.
+Samo otwarcie aplikacji oraz wejście do kategorii korzysta z gotowego katalogu.
+Również przesłanie tego samego URL z telefonu może użyć ważnego zapisanego katalogu —
+komunikat wyraźnie wskazuje wtedy, że użyto zapisanej kopii.
+Nowy kompletny katalog zastępuje poprzedni; aktualnie używany plik jest zwalniany
+dopiero po zakończeniu korzystania z niego. Mała lista po wymuszonym odświeżeniu
+unieważnia poprzedni duży katalog.
+
+Podczas pierwszego importu widać ilość odebranych danych i etap budowania indeksów.
+Jeżeli dostawca obsługuje HTTP gzip, wtyczka prosi o skompresowaną odpowiedź
+i rozpakowuje ją strumieniowo. Limit 512 MiB dotyczy danych po rozpakowaniu.
+Liczniki grup i kategorii są zapisywane w bazie; wejście w nie nie wymaga ponownego
+przeliczania wszystkich kanałów. Zwiększono również partie zapisu przy imporcie.
+
+Pierwsze pobranie lub ręczne odświeżenie bardzo dużej listy nadal może trwać długo —
+zależy to od serwera, łącza i szybkości nośnika. Nie deklarujemy konkretnego czasu
+startu na odbiorniku. Wersja sprzed tej optymalizacji nie zachowywała gotowego katalogu;
+po aktualizacji potrzebny jest jeden pełny import, aby utworzyć nową kopię.
+
 ## Pilot
 
 - **Strzałki**: wybór zakładki, przycisku, pozycji lub grupy.
@@ -282,6 +310,7 @@ Nie deklarujemy przetestowania na fizycznym odbiorniku.
 
 Usuwanie: usuń katalog `/usr/lib/enigma2/python/Plugins/Extensions/IPTVPL`
 i uruchom ponownie GUI.
+
 
 
 

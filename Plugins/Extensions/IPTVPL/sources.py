@@ -145,7 +145,7 @@ class PlaylistUpload:
                     remember_playlist(url, channels)
                     self.events.put((url, len(channels)))
                     self.state = {'state': 'ready', 'count': len(channels),
-                                  'message': 'Pobrano i sprawdzono %d pozycji. Zielony przycisk pilota: zapisz i otwórz listę.' % len(channels)}
+                                  'message': ('Wczytano zapisany katalog: %d pozycji. Zielony: otwórz listę.' if getattr(channels, 'from_cache', False) else 'Pobrano i sprawdzono %d pozycji. Zielony przycisk pilota: zapisz i otwórz listę.') % len(channels)}
             except Exception as error:
                 with self.lock:
                     if not self.closed.is_set() and self.job == job:
@@ -289,5 +289,6 @@ class PlaylistUpload:
 def import_local_playlist(path, directory=PLAYLIST_DIR):
     with open(path, 'rb') as handle:
         return import_playlist_stream(handle, os.path.basename(path), os.fstat(handle.fileno()).st_size, directory)
+
 
 

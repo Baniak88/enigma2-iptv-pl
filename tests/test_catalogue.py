@@ -50,7 +50,7 @@ class CatalogueTests(unittest.TestCase):
                 self.assertEqual(fav[0][1][0]['group'],'Seriale')
             finally:
                 cache=result.path; result.close()
-            self.assertFalse(Path(cache).exists())
+            self.assertTrue(Path(cache).exists())  # Completed imports now survive closing.
 
     def test_failed_build_removes_partial_catalogue(self):
         with tempfile.TemporaryDirectory() as d, patch.object(catalogue,'cache_directory',return_value=d), patch.object(catalogue,'MAX_IN_MEMORY',2):

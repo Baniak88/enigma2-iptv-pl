@@ -45,7 +45,7 @@ class StreamingTests(unittest.TestCase):
         nodes=[n for n in TREE.body if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name in names]
         settings=NS(source=NS(value='/nonexistent/iptv.m3u'),slowinternet=NS(value=slow),player=NS(value='5001'),favourites=NS(value='[]',save=MagicMock()))
         ns={'Screen':Screen,'Label':Label,'Pixmap':Label,'MenuList':MagicMock(),'ActionMap':lambda *a:None,
-            'settings':settings,'ePicLoad':MagicMock(),'deferToThread':MagicMock(),
+            'reactor':MagicMock(),'settings':settings,'ePicLoad':MagicMock(),'deferToThread':MagicMock(),
             'discard_playlist':playlist.discard_playlist,'take_playlist_preview':playlist.take_playlist_preview,'playlist_error_message':playlist.playlist_error_message,
             'load_playlist':playlist.load_playlist,'load_artwork':playlist.load_artwork,
             'MoviePlayer':object,'IPTVPlayer':object,'IPTVNavigator':object,'eServiceReference':Ref,'configfile':MagicMock(),
@@ -88,7 +88,7 @@ class StreamingTests(unittest.TestCase):
     def test_reload_duplicate_late_and_failure_keep_content(self):
         h=self.build(True); self.ns['settings'].source.value='https://example.com/list'
         h.reload(); h.reload(); self.ns['deferToThread'].assert_called_once()
-        self.assertEqual(self.ns['deferToThread'].call_args.kwargs,{'timeout':60})
+        self.assertEqual(self.ns['deferToThread'].call_args.kwargs['timeout'],60)
         request=h.request_id; h.loaded([channel(1)],request)
         h.reload(); h.failed(None,h.request_id)
         self.assertEqual(len(h.channels),1); h.session.open.assert_not_called()
@@ -181,6 +181,19 @@ class StreamingTests(unittest.TestCase):
         self.assertEqual(h.current()['name'],'Kanał 11')
         self.assertTrue(h['frame0_1'].visible)
         self.assertFalse(h.player_open)
+
+    def test_manual_refresh_forces_network_and_progress_ignores_stale_results(self):
+        h=self.build(); self.ns['settings'].source.value='https://example.com/manual'
+        h.reload(force=True)
+        options=self.ns['deferToThread'].call_args.kwargs
+        self.assertTrue(options['force']); self.assertTrue(callable(options['progress']))
+        h.download_progress(h.request_id,1048576,2097152)
+        self.assertIn('1.0 / 2.0',h['status'].text)
+        old=h['status'].text
+        h.download_progress(h.request_id-1,0,None)
+        self.assertEqual(h['status'].text,old)
+        h.loading=False; h.download_progress(h.request_id,0,None)
+        self.assertEqual(h['status'].text,old)
 
     def test_skin_bounds_all_resolutions(self):
         h=self.build()

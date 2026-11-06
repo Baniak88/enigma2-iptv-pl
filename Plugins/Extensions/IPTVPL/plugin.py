@@ -12,6 +12,7 @@ from Components.ConfigList import ConfigListScreen
 from Components.config import (config, configfile, ConfigSubsection, ConfigText,
                                ConfigSelection, ConfigYesNo, getConfigListEntry)
 from twisted.internet.threads import deferToThread
+from twisted.internet import reactor
 from .playlist import load_playlist, load_artwork, take_playlist_preview, playlist_error_message, discard_playlist
 from .sources import PlaylistUpload, saved_playlists, import_local_playlist, validate_playlist_url
 
@@ -676,7 +677,7 @@ class IPTVHome(Screen):
                                     'up': lambda: self.move('up'),
                                     'down': lambda: self.move('down'),
                                     'menu': self.setup, 'blue': self.setup,
-                                    'green': self.reload, 'yellow': self.toggle_favourite,
+                                    'green': lambda: self.reload(force=True), 'yellow': self.toggle_favourite,
                                     'info': self.info}, -1)
         self.onLayoutFinish.append(self.render)
         self.onFirstExecBegin.append(self.start)
@@ -721,7 +722,7 @@ class IPTVHome(Screen):
                 pass
             self.art_path = None
 
-    def reload(self):
+    def reload(self, force=False):
         if self.loading or self.disposed:
             return
         source = settings.source.value.strip()
@@ -735,13 +736,35 @@ class IPTVHome(Screen):
         self.status_text = 'Odświeżanie listy w tle…'
         self.render()
         timeout = 60 if settings.slowinternet.value else 20
-        preview = take_playlist_preview(source)
+        preview = None if force else take_playlist_preview(source)
         if preview is not None:
             self.loaded(preview, request)
             return
-        deferToThread(load_playlist, source, timeout=timeout).addCallbacks(
+        import time
+        last_update = [0.0]
+        def progress(received, total):
+            now = time.monotonic()
+            if received < 0 or now - last_update[0] >= 0.3:
+                last_update[0] = now
+                reactor.callFromThread(self.download_progress, request, received, total)
+        options = {'timeout': timeout, 'progress': progress}
+        if force:
+            options['force'] = True
+        deferToThread(load_playlist, source, **options).addCallbacks(
             lambda channels: self.loaded(channels, request),
             lambda failure: self.failed(failure, request))
+
+    def download_progress(self, request, received, total):
+        if self.disposed or request != self.request_id or not self.loading:
+            return
+        if received < 0:
+            text = 'Budowanie indeksów: %d pozycji…' % total
+        elif total and total > 0:
+            text = 'Pobieranie: %.1f / %.1f MiB' % (received/1048576.0,total/1048576.0)
+        else:
+            text = 'Pobieranie: %.1f MiB' % (received/1048576.0)
+        self.status_text = text
+        self['status'].setText(text)
 
     def loaded(self, channels, request):
         if self.disposed or request != self.request_id:
@@ -814,7 +837,8 @@ class IPTVHome(Screen):
         self.rows = rows
         self.row = self.column = self.first_row = 0
         self.featured = rows[0][1][0] if rows else None
-        self.status_text = '%d pozycji • katalog na dysku' % sum(len(items) for _, items in rows)
+        self.status_text = '%d pozycji • %s' % (sum(len(items) for _, items in rows),
+                            'zapisany katalog' if getattr(self.channels, 'from_cache', False) else 'katalog na dysku')
         self.render()
 
     def catalogue_rows_failed(self, failure, token):
@@ -1557,6 +1581,7 @@ def main(session, **kwargs):
 def Plugins(**kwargs):
     return [PluginDescriptor(name='IPTV PL', description='Odtwarzacz list IPTV M3U',
                              where=PluginDescriptor.WHERE_PLUGINMENU, fnc=main)]
+
 
 
 

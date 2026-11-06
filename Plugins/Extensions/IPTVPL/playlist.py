@@ -104,21 +104,40 @@ def count_playlist_file(path):
     return count
 
 
-def load_playlist(source, timeout=20, progress=None):
-    from .catalogue import CatalogueBuilder
-    builder = CatalogueBuilder()
+def load_playlist(source, timeout=20, progress=None, force=False):
+    from .catalogue import CatalogueBuilder, load_cached_catalogue, save_cached_catalogue, source_fingerprint
     source = source.strip()
+    if not force:
+        cached = load_cached_catalogue(source)
+        if cached is not None:
+            return cached
+    fingerprint = source_fingerprint(source)
+    builder = CatalogueBuilder()
     try:
         if source.lower().startswith(('http://', 'https://')):
-            request = Request(source, headers={'User-Agent': 'Enigma2-IPTVPL/1.0'})
+            try:
+                import gzip
+            except ImportError:
+                gzip = None
+            headers = {'User-Agent': 'Enigma2-IPTVPL/1.0'}
+            if gzip is not None:
+                headers['Accept-Encoding'] = 'gzip'
+            request = Request(source, headers=headers)
             with urlopen(request, timeout=timeout) as response:
                 header = response.headers.get('Content-Length') if hasattr(response, 'headers') else None
                 try:
                     total = int(header) if header else None
                 except (TypeError, ValueError):
                     total = None
-                for channel in iter_m3u(playlist_lines(response, progress, total), response.geturl()):
-                    builder.append(channel)
+                encoding = response.headers.get('Content-Encoding', '') if hasattr(response, 'headers') else ''
+                compressed = isinstance(encoding, str) and encoding.strip().lower() == 'gzip'
+                reader = gzip.GzipFile(fileobj=response) if compressed and gzip is not None else response
+                try:
+                    for channel in iter_m3u(playlist_lines(reader, progress, None if compressed else total), response.geturl()):
+                        builder.append(channel)
+                finally:
+                    if reader is not response:
+                        reader.close()
         else:
             if not source.startswith('/'):
                 raise ValueError('Podaj pełną ścieżkę pliku albo adres HTTP/HTTPS.')
@@ -129,7 +148,9 @@ def load_playlist(source, timeout=20, progress=None):
             raise ValueError('Lista nie zawiera obsługiwanych adresów kanałów.')
         if builder.connection is not None and progress:
             progress(-1, builder.count)
-        return builder.finish()
+        result = builder.finish()
+        save_cached_catalogue(source, result, fingerprint)
+        return result
     except Exception:
         builder.abort()
         raise
@@ -205,6 +226,8 @@ def playlist_error_message(error):
     """User-facing errors must not contain URLs, passwords or provider responses."""
     import socket
     import ssl
+    if error.__class__.__name__ in ('BadGzipFile', 'EOFError'):
+        return 'Serwer zwrócił uszkodzoną skompresowaną playlistę. Ponów pobieranie.'
     from urllib.error import HTTPError, URLError
     if isinstance(error, HTTPError):
         if error.code in (401, 403):
@@ -236,5 +259,6 @@ def playlist_error_message(error):
     if isinstance(error, FileNotFoundError):
         return 'Nie znaleziono pliku playlisty na dekoderze.'
     return 'Nie udało się połączyć z serwerem playlisty. Sprawdź sieć i adres.'
+
 
 
